@@ -1,13 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Shield, Menu, X, MapPin, AlertCircle, Megaphone, LogOut, User as UserIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import SOSButton from '@/components/sos/SOSButton';
 import SOSModal from '@/components/sos/SOSModal';
 import { useAuth } from '@/contexts/AuthContext';
-import { toast } from 'sonner';
 import {
   NavigationMenu,
   NavigationMenuContent,

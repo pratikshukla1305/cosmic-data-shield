@@ -4,7 +4,6 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { toast } from 'sonner';
-import { useNavigate } from 'react-router-dom';
 
 type AuthContextType = {
   user: User | null;
@@ -31,16 +30,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         console.log('Auth state changed:', event, session?.user?.email);
-        if (event === 'SIGNED_IN' && session) {
-          setSession(session);
-          setUser(session.user);
-        } else if (event === 'SIGNED_OUT') {
-          setSession(null);
-          setUser(null);
-        } else {
-          setSession(session);
-          setUser(session?.user ?? null);
-        }
+        setSession(session);
+        setUser(session?.user ?? null);
         setIsLoading(false);
       }
     );
