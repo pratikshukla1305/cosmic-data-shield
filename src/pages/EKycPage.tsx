@@ -55,6 +55,15 @@ const EKycPage = () => {
         try {
           const email = data.session.user.email;
           if (email) {
+            // Try to populate user data if available
+            if (data.session.user.user_metadata?.full_name) {
+              setKycData(prev => ({
+                ...prev,
+                fullName: data.session.user.user_metadata.full_name || "",
+                email: email || ""
+              }));
+            }
+            
             const kycInfo = await getUserKycStatus(email);
             if (kycInfo) {
               setKycStatus(kycInfo.status?.toLowerCase() as VerificationStatus || "pending");

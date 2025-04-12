@@ -2,14 +2,13 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { FileUploader } from '@/components/ui/file-uploader';
-import { Check, Upload, AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { submitKycVerification } from '@/services/userServices';
 import { uploadKycDocument } from '@/utils/uploadUtils';
+import { FileUploader } from '@/components/ui/file-uploader';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type KycVerificationProps = {
   userId: string;
@@ -19,6 +18,7 @@ type KycVerificationProps = {
 
 const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("idFront");
   const [progress, setProgress] = useState({
     idFront: 0,
     idBack: 0,
@@ -71,6 +71,13 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
           }));
         }
       }, 300);
+      
+      // After file is selected, move to next tab if appropriate
+      if (type === 'idFront') {
+        setTimeout(() => setActiveTab('idBack'), 500);
+      } else if (type === 'idBack') {
+        setTimeout(() => setActiveTab('selfie'), 500);
+      }
     } else {
       setProgress(prev => ({
         ...prev,
@@ -166,21 +173,6 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
     }
   };
 
-  const renderUploadCard = (type: 'idFront' | 'idBack' | 'selfie', title: string, description: string) => {
-    return (
-      <Card className="p-4">
-        <FileUploader
-          id={`upload-${type}`}
-          label={title}
-          description={description}
-          progress={progress[type]}
-          onFileSelected={(file) => handleFileSelected(type, file)}
-          accept="image/*"
-        />
-      </Card>
-    );
-  };
-
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -190,27 +182,58 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
         </p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {renderUploadCard(
-          'idFront', 
-          'ID Front Side', 
-          'Upload the front side of your government-issued ID'
-        )}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid grid-cols-3 w-full">
+          <TabsTrigger value="idFront">ID Front</TabsTrigger>
+          <TabsTrigger value="idBack">ID Back</TabsTrigger>
+          <TabsTrigger value="selfie">Selfie</TabsTrigger>
+        </TabsList>
         
-        {renderUploadCard(
-          'idBack', 
-          'ID Back Side', 
-          'Upload the back side of your government-issued ID'
-        )}
-      </div>
-
-      <div className="md:max-w-md">
-        {renderUploadCard(
-          'selfie', 
-          'Selfie Photo', 
-          'Take a clear photo of yourself holding your ID'
-        )}
-      </div>
+        <TabsContent value="idFront">
+          <Card className="p-4">
+            <FileUploader
+              id="upload-idFront"
+              label="ID Front Side"
+              description="Upload or capture the front side of your government-issued ID"
+              progress={progress.idFront}
+              onFileSelected={(file) => handleFileSelected('idFront', file)}
+              accept="image/*"
+              allowCapture={true}
+              captureLabel="ID Front"
+            />
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="idBack">
+          <Card className="p-4">
+            <FileUploader
+              id="upload-idBack"
+              label="ID Back Side"
+              description="Upload or capture the back side of your government-issued ID"
+              progress={progress.idBack}
+              onFileSelected={(file) => handleFileSelected('idBack', file)}
+              accept="image/*"
+              allowCapture={true}
+              captureLabel="ID Back"
+            />
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="selfie">
+          <Card className="p-4">
+            <FileUploader
+              id="upload-selfie"
+              label="Selfie Photo"
+              description="Take a clear photo of yourself holding your ID"
+              progress={progress.selfie}
+              onFileSelected={(file) => handleFileSelected('selfie', file)}
+              accept="image/*"
+              allowCapture={true}
+              captureLabel="Selfie"
+            />
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       <div className="flex items-start space-x-2 mt-6">
         <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 flex-shrink-0" />
@@ -220,7 +243,7 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
       </div>
 
       <div className="flex justify-end space-x-4 mt-8">
-        <Button variant="outline" disabled={isSubmitting}>
+        <Button variant="outline" disabled={isSubmitting} onClick={() => setActiveTab('idFront')}>
           Back
         </Button>
         <Button 
