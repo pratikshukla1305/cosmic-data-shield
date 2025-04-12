@@ -167,69 +167,16 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
   };
 
   const renderUploadCard = (type: 'idFront' | 'idBack' | 'selfie', title: string, description: string) => {
-    const file = uploadedFiles[type];
-    const progressValue = progress[type];
-    
     return (
       <Card className="p-4">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-base font-medium">{title}</Label>
-            {progressValue === 100 && <Check className="h-5 w-5 text-green-500" />}
-          </div>
-          <p className="text-sm text-gray-500">{description}</p>
-          
-          {file ? (
-            <div className="mt-2">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">{file.name}</span>
-                <span className="text-sm text-gray-500">{Math.round(file.size / 1024)} KB</span>
-              </div>
-              
-              {/* Progress bar */}
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
-                <div 
-                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
-                  style={{ width: `${progressValue}%` }}
-                ></div>
-              </div>
-              
-              <div className="flex justify-between mt-2">
-                <span className="text-xs text-gray-500">
-                  {progressValue === 100 ? 'Completed' : 'Uploading...'}
-                </span>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => handleFileSelected(type, null)}
-                  className="h-auto p-0 text-xs text-red-500 hover:text-red-700 hover:bg-transparent"
-                >
-                  Remove
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-4">
-              <Input
-                type="file"
-                id={`upload-${type}`}
-                className="hidden"
-                accept="image/*"
-                onChange={(e) => handleFileSelected(type, e.target.files?.[0] || null)}
-              />
-              <label 
-                htmlFor={`upload-${type}`}
-                className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-md cursor-pointer bg-gray-50 hover:bg-gray-100"
-              >
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <Upload className="h-8 w-8 text-gray-400 mb-2" />
-                  <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                  <p className="text-xs text-gray-500">PNG, JPG up to 5MB</p>
-                </div>
-              </label>
-            </div>
-          )}
-        </div>
+        <FileUploader
+          id={`upload-${type}`}
+          label={title}
+          description={description}
+          progress={progress[type]}
+          onFileSelected={(file) => handleFileSelected(type, file)}
+          accept="image/*"
+        />
       </Card>
     );
   };

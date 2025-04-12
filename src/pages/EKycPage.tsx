@@ -15,6 +15,7 @@ import Footer from '@/components/Footer';
 import { supabase } from '@/integrations/supabase/client';
 import { getUserKycStatus } from '@/services/userServices';
 import { toast } from '@/hooks/use-toast';
+import { VerificationStatus } from '@/data/kycVerificationsData';
 
 type KycData = {
   fullName: string;
@@ -42,7 +43,7 @@ const EKycPage = () => {
     phone: "",
     email: ""
   });
-  const [kycStatus, setKycStatus] = useState<"pending" | "approved" | "rejected" | "none">("none");
+  const [kycStatus, setKycStatus] = useState<VerificationStatus>("none");
 
   useEffect(() => {
     const checkUserSession = async () => {
@@ -56,7 +57,7 @@ const EKycPage = () => {
           if (email) {
             const kycInfo = await getUserKycStatus(email);
             if (kycInfo) {
-              setKycStatus(kycInfo.status?.toLowerCase() as any || "pending");
+              setKycStatus(kycInfo.status?.toLowerCase() as VerificationStatus || "pending");
               setCurrentStep("completed");
             }
           }
