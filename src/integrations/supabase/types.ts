@@ -502,6 +502,7 @@ export type Database = {
           selfie: string | null
           status: string | null
           submission_date: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string | null
@@ -515,6 +516,7 @@ export type Database = {
           selfie?: string | null
           status?: string | null
           submission_date: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string | null
@@ -528,6 +530,7 @@ export type Database = {
           selfie?: string | null
           status?: string | null
           submission_date?: string
+          user_id?: string | null
         }
         Relationships: []
       }

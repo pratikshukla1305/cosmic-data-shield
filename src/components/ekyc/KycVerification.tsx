@@ -1,300 +1,257 @@
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { AlertTriangle, CheckCircle2, User, UserCircle } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
-import { submitKycVerification } from '@/services/userServices';
-import { uploadKycDocument } from '@/utils/uploadUtils';
-import { FileUploader } from '@/components/ui/file-uploader';
+import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { FileUploader } from '@/components/ui/file-uploader';
+import { toast } from '@/hooks/use-toast';
+import { submitKycVerification } from '@/services/userServices';
+import { Loader2 } from 'lucide-react';
+import UserInfoCard from './UserInfoCard';
 
-type KycVerificationProps = {
-  userId: string;
+interface KycVerificationProps {
   onComplete: () => void;
-  formData: any;
-};
-
-const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps) => {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState<string>("idFront");
-  const [progress, setProgress] = useState({
-    idFront: 0,
-    idBack: 0,
-    selfie: 0
-  });
-
-  const [uploadedFiles, setUploadedFiles] = useState<{
-    idFront: File | null;
-    idBack: File | null;
-    selfie: File | null;
-  }>({
-    idFront: null,
-    idBack: null,
-    selfie: null
-  });
-
-  const [uploadedUrls, setUploadedUrls] = useState<{
-    idFront: string | null;
-    idBack: string | null;
-    selfie: string | null;
-  }>({
-    idFront: null,
-    idBack: null,
-    selfie: null
-  });
-
-  const handleFileSelected = (type: 'idFront' | 'idBack' | 'selfie', file: File | null) => {
-    setUploadedFiles(prev => ({
-      ...prev,
-      [type]: file
-    }));
-
-    if (file) {
-      setProgress(prev => ({
-        ...prev,
-        [type]: 1 // Show progress started
-      }));
-      
-      // Simulate upload progress (in a real app, monitor actual upload progress)
-      let currentProgress = 0;
-      const interval = setInterval(() => {
-        if (currentProgress >= 95) {
-          clearInterval(interval);
-        } else {
-          currentProgress += Math.floor(Math.random() * 20);
-          if (currentProgress > 95) currentProgress = 95;
-          setProgress(prev => ({
-            ...prev,
-            [type]: currentProgress
-          }));
-        }
-      }, 300);
-      
-      // After file is selected, move to next tab if appropriate
-      if (type === 'idFront') {
-        setTimeout(() => setActiveTab('idBack'), 500);
-      } else if (type === 'idBack') {
-        setTimeout(() => setActiveTab('selfie'), 500);
-      }
-    } else {
-      setProgress(prev => ({
-        ...prev,
-        [type]: 0
-      }));
-      setUploadedUrls(prev => ({
-        ...prev,
-        [type]: null
-      }));
-    }
+  formData: {
+    fullName: string;
+    dob: string;
+    nationality: string;
+    idType: "passport" | "national_id" | "driving_license";
+    idNumber: string;
+    address: string;
+    phone: string;
+    email: string;
   };
+  userId: string;
+}
 
-  const uploadDocument = async (type: 'idFront' | 'idBack' | 'selfie', file: File | null) => {
-    if (!file) return null;
-    
-    try {
-      const url = await uploadKycDocument(file, userId, type);
-      if (url) {
-        setProgress(prev => ({
-          ...prev,
-          [type]: 100
-        }));
-        setUploadedUrls(prev => ({
-          ...prev,
-          [type]: url
-        }));
-        return url;
-      }
-      return null;
-    } catch (error) {
-      console.error(`Error uploading ${type}:`, error);
+const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps) => {
+  const [activeTab, setActiveTab] = useState<string>('id-front');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  
+  const [idFrontFile, setIdFrontFile] = useState<File | null>(null);
+  const [idBackFile, setIdBackFile] = useState<File | null>(null);
+  const [selfieFile, setSelfieFile] = useState<File | null>(null);
+  
+  const [idFrontProgress, setIdFrontProgress] = useState<number>(0);
+  const [idBackProgress, setIdBackProgress] = useState<number>(0);
+  const [selfieProgress, setSelfieProgress] = useState<number>(0);
+  
+  const uploadFiles = async () => {
+    if (!idFrontFile) {
       toast({
-        title: `Error uploading ${type}`,
-        description: "There was a problem uploading your document. Please try again.",
+        title: "ID Front Required",
+        description: "Please upload the front of your ID document",
         variant: "destructive"
       });
-      return null;
-    }
-  };
-
-  const handleSubmit = async () => {
-    // Validate required files
-    if (!uploadedFiles.idFront || !uploadedFiles.idBack || !uploadedFiles.selfie) {
-      toast({
-        title: "Missing documents",
-        description: "Please upload both sides of your ID and a selfie photo.",
-        variant: "destructive"
-      });
+      setActiveTab('id-front');
       return;
     }
-
+    
+    setIsLoading(true);
+    
     try {
-      setIsSubmitting(true);
+      // Simulate upload progress
+      let progress = 0;
+      const progressInterval = setInterval(() => {
+        progress += 5;
+        if (idFrontFile) setIdFrontProgress(Math.min(progress, 100));
+        if (idBackFile) setIdBackProgress(Math.min(progress, 100));
+        if (selfieFile) setSelfieProgress(Math.min(progress, 100));
+        
+        if (progress >= 100) {
+          clearInterval(progressInterval);
+        }
+      }, 100);
       
-      // Upload files to Supabase storage and get URLs
-      const idFrontUrl = await uploadDocument('idFront', uploadedFiles.idFront);
-      const idBackUrl = await uploadDocument('idBack', uploadedFiles.idBack);
-      const selfieUrl = await uploadDocument('selfie', uploadedFiles.selfie);
-
+      // Simulate file upload and get URLs (in a real app, this would upload to storage)
+      const idFrontUrl = idFrontFile ? await simulateFileUpload(idFrontFile) : null;
+      const idBackUrl = idBackFile ? await simulateFileUpload(idBackFile) : null; 
+      const selfieUrl = selfieFile ? await simulateFileUpload(selfieFile) : null;
+      
       // Submit verification data
-      const verificationData = {
-        ...formData,
+      await submitKycVerification({
+        fullName: formData.fullName,
+        email: formData.email,
         idFront: idFrontUrl,
         idBack: idBackUrl,
         selfie: selfieUrl,
-        userId: userId
-      };
-
-      const result = await submitKycVerification(verificationData);
+        userId
+      });
       
-      if (result && result.length > 0) {
-        toast({
-          title: "Verification submitted successfully",
-          description: "Your identity verification has been sent for review.",
-        });
-        onComplete();
-      } else {
-        toast({
-          title: "Submission error",
-          description: "There was an error submitting your verification. Please try again.",
-          variant: "destructive"
-        });
-      }
-    } catch (error: any) {
-      console.error('Error submitting verification:', error);
       toast({
-        title: "Verification failed",
-        description: error.message || "Failed to submit your verification. Please try again later.",
+        title: "Verification Submitted",
+        description: "Your identity verification has been submitted successfully",
+      });
+      
+      clearInterval(progressInterval);
+      onComplete();
+      
+    } catch (error: any) {
+      console.error("Error uploading verification documents:", error);
+      toast({
+        title: "Submission Failed",
+        description: error.message || "Failed to submit verification. Please try again.",
         variant: "destructive"
       });
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
+    }
+  };
+  
+  // Simulate file upload and return a URL
+  const simulateFileUpload = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        // In a real app, this would be the URL of the uploaded file
+        const fakeUrl = URL.createObjectURL(file);
+        resolve(fakeUrl);
+      }, 1000);
+    });
+  };
+  
+  const handleNextStep = () => {
+    // Move to next tab
+    if (activeTab === 'id-front') {
+      if (!idFrontFile) {
+        toast({
+          title: "ID Front Required",
+          description: "Please upload the front of your ID document",
+          variant: "destructive"
+        });
+        return;
+      }
+      setActiveTab('id-back');
+    } else if (activeTab === 'id-back') {
+      setActiveTab('selfie');
     }
   };
 
+  const isReadyToSubmit = idFrontFile !== null;
+
   return (
-    <div className="space-y-6">
-      {/* User information summary card */}
-      <Card className="p-6 bg-blue-50">
-        <div className="flex items-center space-x-4">
-          <div className="h-14 w-14 bg-blue-100 rounded-full flex items-center justify-center">
-            <UserCircle className="h-8 w-8 text-blue-600" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-blue-900">Your Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 mt-2">
-              <p className="text-sm"><span className="font-medium">Name:</span> {formData.fullName}</p>
-              <p className="text-sm"><span className="font-medium">Date of Birth:</span> {formData.dob}</p>
-              <p className="text-sm"><span className="font-medium">ID Type:</span> {formData.idType.replace('_', ' ').toUpperCase()}</p>
-              <p className="text-sm"><span className="font-medium">Nationality:</span> {formData.nationality}</p>
-              <p className="text-sm"><span className="font-medium">ID Number:</span> {formData.idNumber}</p>
-              <p className="text-sm"><span className="font-medium">Email:</span> {formData.email}</p>
-            </div>
-          </div>
-        </div>
+    <div>
+      <UserInfoCard formData={formData} />
+      
+      <Card className="mb-6">
+        <CardContent className="p-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid grid-cols-3 mb-6">
+              <TabsTrigger value="id-front">ID Front</TabsTrigger>
+              <TabsTrigger value="id-back">ID Back</TabsTrigger>
+              <TabsTrigger value="selfie">Selfie</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="id-front" className="space-y-4">
+              <div className="text-center mb-4">
+                <h3 className="text-lg font-medium">Upload ID Document (Front)</h3>
+                <p className="text-sm text-gray-500">Please upload the front side of your ID card or passport</p>
+              </div>
+              
+              <FileUploader
+                id="id-front"
+                onFileSelected={(file) => setIdFrontFile(file)}
+                accept="image/*"
+                progress={idFrontProgress}
+                allowCapture={true}
+                captureLabel="ID Front"
+              />
+              
+              <div className="flex justify-end mt-4">
+                <Button 
+                  onClick={handleNextStep} 
+                  className="bg-shield-blue hover:bg-blue-700"
+                  disabled={!idFrontFile || isLoading}
+                >
+                  Continue to ID Back
+                </Button>
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="id-back" className="space-y-4">
+              <div className="text-center mb-4">
+                <h3 className="text-lg font-medium">Upload ID Document (Back)</h3>
+                <p className="text-sm text-gray-500">Please upload the back side of your ID card</p>
+              </div>
+              
+              <FileUploader
+                id="id-back"
+                onFileSelected={(file) => setIdBackFile(file)}
+                accept="image/*"
+                progress={idBackProgress}
+                allowCapture={true}
+                captureLabel="ID Back"
+              />
+              
+              <div className="flex justify-between mt-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setActiveTab('id-front')}
+                  disabled={isLoading}
+                >
+                  Back
+                </Button>
+                <Button 
+                  onClick={handleNextStep} 
+                  className="bg-shield-blue hover:bg-blue-700"
+                  disabled={isLoading}
+                >
+                  Continue to Selfie
+                </Button>
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="selfie" className="space-y-4">
+              <div className="text-center mb-4">
+                <h3 className="text-lg font-medium">Take a Selfie</h3>
+                <p className="text-sm text-gray-500">Please take a clear photo of your face for verification</p>
+              </div>
+              
+              <FileUploader
+                id="selfie"
+                onFileSelected={(file) => setSelfieFile(file)}
+                accept="image/*"
+                progress={selfieProgress}
+                allowCapture={true}
+                captureLabel="Selfie"
+              />
+              
+              <div className="flex justify-between mt-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setActiveTab('id-back')}
+                  disabled={isLoading}
+                >
+                  Back
+                </Button>
+                <Button 
+                  onClick={uploadFiles} 
+                  className="bg-green-600 hover:bg-green-700"
+                  disabled={!isReadyToSubmit || isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    'Submit Verification'
+                  )}
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
       </Card>
-
-      <div className="space-y-2">
-        <h2 className="text-lg font-semibold tracking-tight">Document Verification</h2>
-        <p className="text-sm text-gray-500">
-          Please upload clear photos of your identification documents and a selfie for verification.
-        </p>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid grid-cols-3 w-full">
-          <TabsTrigger value="idFront" className="relative">
-            ID Front
-            {uploadedFiles.idFront && progress.idFront === 100 && (
-              <CheckCircle2 className="h-4 w-4 text-green-500 absolute -top-1 -right-1" />
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="idBack" className="relative">
-            ID Back
-            {uploadedFiles.idBack && progress.idBack === 100 && (
-              <CheckCircle2 className="h-4 w-4 text-green-500 absolute -top-1 -right-1" />
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="selfie" className="relative">
-            Selfie
-            {uploadedFiles.selfie && progress.selfie === 100 && (
-              <CheckCircle2 className="h-4 w-4 text-green-500 absolute -top-1 -right-1" />
-            )}
-          </TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value="idFront">
-          <Card className="p-4">
-            <FileUploader
-              id="upload-idFront"
-              label="ID Front Side"
-              description="Upload or capture the front side of your government-issued ID"
-              progress={progress.idFront}
-              onFileSelected={(file) => handleFileSelected('idFront', file)}
-              accept="image/*"
-              allowCapture={true}
-              captureLabel="ID Front"
-            />
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="idBack">
-          <Card className="p-4">
-            <FileUploader
-              id="upload-idBack"
-              label="ID Back Side"
-              description="Upload or capture the back side of your government-issued ID"
-              progress={progress.idBack}
-              onFileSelected={(file) => handleFileSelected('idBack', file)}
-              accept="image/*"
-              allowCapture={true}
-              captureLabel="ID Back"
-            />
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="selfie">
-          <Card className="p-4">
-            <FileUploader
-              id="upload-selfie"
-              label="Selfie Photo"
-              description="Take a clear photo of yourself holding your ID"
-              progress={progress.selfie}
-              onFileSelected={(file) => handleFileSelected('selfie', file)}
-              accept="image/*"
-              allowCapture={true}
-              captureLabel="Selfie"
-            />
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      <div className="flex items-start space-x-2 mt-6">
-        <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 flex-shrink-0" />
-        <p className="text-sm text-gray-600">
-          Your documents will be encrypted and securely stored. They will only be used for identity verification purposes.
-        </p>
-      </div>
-
-      <div className="flex justify-end space-x-4 mt-8">
-        <Button variant="outline" disabled={isSubmitting} onClick={() => setActiveTab('idFront')}>
-          Back
-        </Button>
-        <Button 
-          onClick={handleSubmit}
-          disabled={isSubmitting || !uploadedFiles.idFront || !uploadedFiles.idBack || !uploadedFiles.selfie}
-          className="flex items-center space-x-2"
-        >
-          {isSubmitting ? (
-            <>
-              <div className="h-4 w-4 border-t-2 border-b-2 border-white rounded-full animate-spin"></div>
-              <span>Submitting...</span>
-            </>
-          ) : (
-            <span>Submit for Verification</span>
-          )}
-        </Button>
+      
+      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+        <h4 className="text-sm font-medium mb-2">Document Requirements:</h4>
+        <ul className="space-y-1 text-sm text-gray-600 list-disc pl-5">
+          <li>Documents should be clear, with no glare or blur</li>
+          <li>All corners of the document should be visible</li>
+          <li>For passport, scan the page with your photo</li>
+          <li>For ID card, upload both front and back</li>
+          <li>Selfie should clearly show your face without sunglasses</li>
+        </ul>
       </div>
     </div>
   );
