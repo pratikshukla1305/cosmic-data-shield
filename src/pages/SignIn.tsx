@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -14,7 +13,7 @@ const SignIn = () => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const { signIn, user } = useAuth();
+  const { signIn, user, session } = useAuth();
   const navigate = useNavigate();
   
   console.log("SignIn page loaded, user state:", user ? "Logged in" : "Not logged in");
@@ -45,16 +44,15 @@ const SignIn = () => {
       if (error) {
         console.error("Sign-in error:", error.message);
         toast.error(`Sign-in error: ${error.message}`);
+        setIsLoading(false);
       } else {
         console.log("Sign in successful, redirecting to dashboard");
         toast.success("Sign in successful!");
-        // Add small delay to allow state to update
-        setTimeout(() => navigate('/dashboard'), 500);
+        // Don't reset isLoading here to prevent button flicker during redirect
       }
     } catch (err: any) {
       console.error("Unexpected error during sign in:", err);
       toast.error("An unexpected error occurred");
-    } finally {
       setIsLoading(false);
     }
   };

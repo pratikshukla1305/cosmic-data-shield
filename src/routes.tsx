@@ -15,6 +15,8 @@ import OfficerDashboard from "./pages/OfficerDashboard";
 import OfficerLogin from "./pages/OfficerLogin";
 import EKycPage from "./pages/EKycPage";
 import SubmitTipPage from "./pages/SubmitTipPage";
+import { useAuth } from "./contexts/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 const router = createBrowserRouter([
   {
@@ -32,15 +34,27 @@ const router = createBrowserRouter([
       },
       {
         path: "dashboard",
-        element: <Dashboard />,
+        element: (
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        ),
       },
       {
         path: "reports",
-        element: <MyReports />,
+        element: (
+          <ProtectedRoute>
+            <MyReports />
+          </ProtectedRoute>
+        ),
       },
       {
         path: "profile",
-        element: <Profile />,
+        element: (
+          <ProtectedRoute>
+            <Profile />
+          </ProtectedRoute>
+        ),
       },
       {
         path: "heatmap",
@@ -73,6 +87,14 @@ const router = createBrowserRouter([
       {
         path: "submit-tip",
         element: <SubmitTipPage />,
+      },
+      {
+        path: "case-heatmap",
+        element: <CaseHeatmap />,
+      },
+      {
+        path: "home",
+        element: <Home />,
       }
     ],
   },
