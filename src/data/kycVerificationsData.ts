@@ -46,3 +46,17 @@ export const mockKycVerifications: KycVerificationData[] = [
     selfieUrl: "https://example.com/selfie-3.jpg"
   }
 ];
+
+// Add the missing function
+export const getUserVerificationStatus = (userId: string): VerificationStatus => {
+  // In a real application, this would call an API or check a database
+  // For now, we'll just return a random status for demonstration purposes
+  const statuses: VerificationStatus[] = ["pending", "approved", "rejected"];
+  
+  // For deterministic behavior in development (based on userId)
+  const userIdSum = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const statusIndex = userIdSum % statuses.length;
+  
+  return statuses[statusIndex];
+};
+

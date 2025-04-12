@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { SOSAlert, KycVerification, Advisory, CriminalProfile, CaseData, CriminalTip, KycDocument } from '@/types/officer';
 
@@ -148,7 +147,13 @@ export const getUserKycStatus = async (email: string): Promise<KycVerification |
       return null;
     }
     
-    return data[0];
+    // Add empty documents array to match the KycVerification type
+    const kycData: KycVerification = {
+      ...data[0],
+      documents: [] // Initialize with empty array to satisfy the type
+    };
+    
+    return kycData;
   } catch (error) {
     console.error("Error in getUserKycStatus:", error);
     throw error;

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,7 +7,7 @@ import { getUserVerificationStatus, VerificationStatus } from '@/data/kycVerific
 interface KycCompletedProps {
   status?: VerificationStatus;
   userId?: string;
-  onReset?: () => void; // Add the missing prop
+  onReset?: () => void;
 }
 
 const KycCompleted = ({ 
@@ -21,9 +20,12 @@ const KycCompleted = ({
   // Poll for status updates (in a real app this would use websockets or a real-time database)
   useEffect(() => {
     const checkStatus = () => {
-      const currentStatus = getUserVerificationStatus(userId);
-      if (currentStatus !== 'none' && currentStatus !== status) {
-        setStatus(currentStatus);
+      // Only check if we don't have a valid status already
+      if (initialStatus === 'none' || initialStatus === 'pending') {
+        const currentStatus = getUserVerificationStatus(userId);
+        if (currentStatus !== 'none' && currentStatus !== status) {
+          setStatus(currentStatus);
+        }
       }
     };
     
@@ -32,7 +34,7 @@ const KycCompleted = ({
     
     const interval = setInterval(checkStatus, 5000);
     return () => clearInterval(interval);
-  }, [userId, status]);
+  }, [userId, status, initialStatus]);
   
   return (
     <Card className="max-w-lg mx-auto">
