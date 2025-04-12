@@ -9,7 +9,7 @@ import {
 } from "./ui/dropdown-menu";
 import { useReports } from "../contexts/ReportContext";
 import { toast } from "sonner";
-import { Report } from "../types/report";
+import { Report, ReportStatus } from "../types/report";
 import { Loader2, MoreHorizontal } from "lucide-react";
 
 interface ReportActionButtonProps {
@@ -25,24 +25,24 @@ export default function ReportActionButton({
   const [isLoading, setIsLoading] = useState(false);
 
   // Define valid status transitions based on current status
-  const getValidStatusTransitions = (currentStatus: Report["status"]) => {
+  const getValidStatusTransitions = (currentStatus: ReportStatus) => {
     switch (currentStatus) {
       case "submitted":
-        return ["under_review", "rejected"];
+        return ["under_review", "rejected"] as ReportStatus[];
       case "under_review":
-        return ["investigating", "rejected"];
+        return ["investigating", "rejected"] as ReportStatus[];
       case "investigating":
-        return ["resolved", "closed"];
+        return ["resolved", "closed"] as ReportStatus[];
       case "resolved":
-        return ["closed"];
+        return ["closed"] as ReportStatus[];
       default:
-        return [];
+        return [] as ReportStatus[];
     }
   };
 
   const validTransitions = getValidStatusTransitions(report.status);
 
-  const handleStatusChange = async (newStatus: Report["status"]) => {
+  const handleStatusChange = async (newStatus: ReportStatus) => {
     try {
       setIsLoading(true);
       await updateStatus(report.id, newStatus);
