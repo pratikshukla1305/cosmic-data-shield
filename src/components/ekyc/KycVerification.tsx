@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, User, UserCircle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { submitKycVerification } from '@/services/userServices';
@@ -175,6 +175,26 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
 
   return (
     <div className="space-y-6">
+      {/* User information summary card */}
+      <Card className="p-6 bg-blue-50">
+        <div className="flex items-center space-x-4">
+          <div className="h-14 w-14 bg-blue-100 rounded-full flex items-center justify-center">
+            <UserCircle className="h-8 w-8 text-blue-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-blue-900">Your Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 mt-2">
+              <p className="text-sm"><span className="font-medium">Name:</span> {formData.fullName}</p>
+              <p className="text-sm"><span className="font-medium">Date of Birth:</span> {formData.dob}</p>
+              <p className="text-sm"><span className="font-medium">ID Type:</span> {formData.idType.replace('_', ' ').toUpperCase()}</p>
+              <p className="text-sm"><span className="font-medium">Nationality:</span> {formData.nationality}</p>
+              <p className="text-sm"><span className="font-medium">ID Number:</span> {formData.idNumber}</p>
+              <p className="text-sm"><span className="font-medium">Email:</span> {formData.email}</p>
+            </div>
+          </div>
+        </div>
+      </Card>
+
       <div className="space-y-2">
         <h2 className="text-lg font-semibold tracking-tight">Document Verification</h2>
         <p className="text-sm text-gray-500">
@@ -184,9 +204,24 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid grid-cols-3 w-full">
-          <TabsTrigger value="idFront">ID Front</TabsTrigger>
-          <TabsTrigger value="idBack">ID Back</TabsTrigger>
-          <TabsTrigger value="selfie">Selfie</TabsTrigger>
+          <TabsTrigger value="idFront" className="relative">
+            ID Front
+            {uploadedFiles.idFront && progress.idFront === 100 && (
+              <CheckCircle2 className="h-4 w-4 text-green-500 absolute -top-1 -right-1" />
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="idBack" className="relative">
+            ID Back
+            {uploadedFiles.idBack && progress.idBack === 100 && (
+              <CheckCircle2 className="h-4 w-4 text-green-500 absolute -top-1 -right-1" />
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="selfie" className="relative">
+            Selfie
+            {uploadedFiles.selfie && progress.selfie === 100 && (
+              <CheckCircle2 className="h-4 w-4 text-green-500 absolute -top-1 -right-1" />
+            )}
+          </TabsTrigger>
         </TabsList>
         
         <TabsContent value="idFront">

@@ -88,6 +88,7 @@ export const submitKycVerification = async (verificationData: any): Promise<KycV
         id_front: verificationData.idFront,
         id_back: verificationData.idBack,
         selfie: verificationData.selfie,
+        // Store user ID as a string, not directly referencing auth.users
         user_id: verificationData.userId || null
       }])
       .select();
@@ -98,9 +99,9 @@ export const submitKycVerification = async (verificationData: any): Promise<KycV
     }
     
     // Initialize the documents array
-    const results: KycVerification[] = data.map(item => ({
+    const results = data.map(item => ({
       ...item,
-      documents: []
+      documents: [] as KycDocument[]
     }));
     
     // If documents are provided, store them in the kyc_documents table
@@ -157,7 +158,7 @@ export const getUserKycStatus = async (email: string): Promise<KycVerification |
       .limit(1);
       
     if (userId) {
-      // If we have a user ID, use that as it's more reliable
+      // If we have a user ID, query by string comparison, not referencing auth.users
       query = query.eq('user_id', userId);
     } else if (email) {
       // Fall back to email if no user ID
@@ -166,13 +167,13 @@ export const getUserKycStatus = async (email: string): Promise<KycVerification |
       throw new Error("No user identification provided");
     }
     
-    const { data, error } = await query.single();
+    const { data, error } = await query;
     
-    if (error && error.code !== 'PGRST116') { // PGRST116 is the error code for no rows returned
+    if (error) {
       throw error;
     }
     
-    if (!data) {
+    if (!data || data.length === 0) {
       return null;
     }
     
@@ -180,14 +181,14 @@ export const getUserKycStatus = async (email: string): Promise<KycVerification |
     const { data: documents, error: docError } = await supabase
       .from('kyc_documents')
       .select('*')
-      .eq('verification_id', data.id);
+      .eq('verification_id', data[0].id);
     
     if (docError) {
       console.error("Error fetching KYC documents:", docError);
     }
     
     return {
-      ...data,
+      ...data[0],
       documents: documents || []
     };
   } catch (error) {

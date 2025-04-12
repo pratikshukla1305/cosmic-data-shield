@@ -66,7 +66,8 @@ const EKycPage = () => {
             
             const kycInfo = await getUserKycStatus(email);
             if (kycInfo) {
-              setKycStatus(kycInfo.status?.toLowerCase() as VerificationStatus || "pending");
+              const status = kycInfo.status?.toLowerCase() as VerificationStatus || "pending";
+              setKycStatus(status);
               setCurrentStep("completed");
             }
           }
