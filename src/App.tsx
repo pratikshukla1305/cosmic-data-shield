@@ -4,7 +4,6 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { useState } from "react";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { OfficerAuthProvider } from "@/contexts/OfficerAuthContext";
 import ProtectedOfficerRoute from "@/components/officer/ProtectedOfficerRoute";
@@ -40,12 +39,14 @@ import OfficerSettings from "./pages/OfficerSettings";
 import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
 import MyReports from "./pages/MyReports";
+import React from 'react'; // Explicitly import React
+
+// Create the query client outside of the component
+const queryClient = new QueryClient();
 
 const App = () => {
-  // Create a new QueryClient instance inside the component function
-  const [queryClient] = useState(() => new QueryClient());
-
   return (
+    // Use the pre-created queryClient instance
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <OfficerAuthProvider>
