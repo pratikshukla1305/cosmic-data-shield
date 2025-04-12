@@ -30,3 +30,4 @@ enabled = true
 
 [functions.analyze-video-evidence]
 verify_jwt = true
+
