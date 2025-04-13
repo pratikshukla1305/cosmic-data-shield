@@ -182,10 +182,25 @@ export const getCases = async (): Promise<CaseData[]> => {
 
 export const createCase = async (caseData: Partial<CaseData>): Promise<CaseData> => {
   try {
-    // Fix: Don't wrap caseData in an array
+    // Type assertion to match what Supabase expects
+    // This ensures TypeScript knows we're providing all required fields
+    const validCaseData = {
+      case_number: caseData.case_number || '',
+      case_date: caseData.case_date || '',
+      case_time: caseData.case_time || '',
+      region: caseData.region || '',
+      address: caseData.address || '',
+      case_type: caseData.case_type || '',
+      description: caseData.description || '',
+      latitude: caseData.latitude,
+      longitude: caseData.longitude,
+      reporter_id: caseData.reporter_id,
+      status: caseData.status
+    };
+    
     const { data, error } = await supabase
       .from('cases')
-      .insert(caseData)
+      .insert(validCaseData)
       .select()
       .single();
     
@@ -223,10 +238,24 @@ export const getCriminalProfiles = async (): Promise<CriminalProfile[]> => {
 
 export const createCriminalProfile = async (profileData: Partial<CriminalProfile>): Promise<CriminalProfile> => {
   try {
-    // Fix: Don't wrap profileData in an array
+    // Type assertion to match what Supabase expects
+    // This ensures TypeScript knows we're providing all required fields
+    const validProfileData = {
+      full_name: profileData.full_name || '',
+      case_number: profileData.case_number || '',
+      last_known_location: profileData.last_known_location || '',
+      charges: profileData.charges || '',
+      age: profileData.age,
+      height: profileData.height,
+      weight: profileData.weight,
+      risk_level: profileData.risk_level,
+      photo_url: profileData.photo_url,
+      additional_information: profileData.additional_information
+    };
+    
     const { data, error } = await supabase
       .from('criminal_profiles')
-      .insert(profileData)
+      .insert(validProfileData)
       .select()
       .single();
     
