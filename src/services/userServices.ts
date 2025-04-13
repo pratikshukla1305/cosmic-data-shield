@@ -60,7 +60,9 @@ export const submitKycVerification = async (verificationData: any): Promise<KycV
         status: 'Pending',
         id_front: verificationData.idFront,
         id_back: verificationData.idBack,
-        selfie: verificationData.selfie
+        selfie: verificationData.selfie,
+        user_id: verificationData.userId || null,
+        extracted_data: verificationData.extractedData || {}
       }])
       .select();
     

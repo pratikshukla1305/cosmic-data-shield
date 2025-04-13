@@ -10,6 +10,7 @@ import { toast } from '@/hooks/use-toast';
 import { addKycVerification, getKycVerificationByUserId } from '@/data/kycVerificationsData';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { createWorker } from 'tesseract.js';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface KycVerificationProps {
   userId: string;
@@ -43,17 +44,35 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
     dob?: string;
     address?: string;
     gender?: string;
-  }>({}); 
+  }>({});
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editDialogType, setEditDialogType] = useState<"idNumber" | "name" | "dob">("idNumber");
   const [editedIdNumber, setEditedIdNumber] = useState("");
   const [editedName, setEditedName] = useState("");
   const [editedDob, setEditedDob] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [user, setUser] = useState<any>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const workerRef = useRef<any>(null);
+
+  useEffect(() => {
+    // Check if the user is authenticated
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user || null);
+    };
+    
+    checkAuth();
+    
+    // Subscribe to auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     const initWorker = async () => {
@@ -423,11 +442,29 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
     stopCamera();
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!idFront || !idBack || !selfie) {
       toast({
         title: "Missing Documents",
         description: "Please upload all required documents (ID Front, ID Back, and Selfie).",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!formData) {
+      toast({
+        title: "Missing Personal Information",
+        description: "Please complete your personal information first.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in to submit your verification.",
         variant: "destructive"
       });
       return;
@@ -444,57 +481,55 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
       });
     };
 
-    const submitVerification = async () => {
-      try {
-        const idFrontBase64 = idFront ? await convertFileToBase64(idFront) : '';
-        const idBackBase64 = idBack ? await convertFileToBase64(idBack) : '';
-        const selfieBase64 = selfie ? await convertFileToBase64(selfie) : '';
-        
-        const documents = [];
-        if (Object.keys(extractedData).length > 0) {
-          documents.push({
-            type: 'ID Card OCR',
-            url: idFrontBase64,
-            extracted_data: extractedData
-          });
-        }
-        
-        if (formData) {
-          const { submitKycVerification } = await import('@/services/userServices');
-          
-          await submitKycVerification({
-            fullName: formData.fullName,
+    try {
+      const idFrontBase64 = idFront ? await convertFileToBase64(idFront) : '';
+      const idBackBase64 = idBack ? await convertFileToBase64(idBack) : '';
+      const selfieBase64 = selfie ? await convertFileToBase64(selfie) : '';
+      
+      // Insert directly into Supabase
+      const { data, error } = await supabase
+        .from('kyc_verifications')
+        .insert([
+          {
+            full_name: formData.fullName,
             email: formData.email,
-            idFront: idFrontBase64,
-            idBack: idBackBase64,
+            id_front: idFrontBase64,
+            id_back: idBackBase64,
             selfie: selfieBase64,
-            documents: documents
-          });
-        }
-        
-        setIsSubmitting(false);
-        setIsComplete(true);
-        
-        toast({
-          title: "Verification Submitted",
-          description: "Your identity verification has been submitted successfully.",
-        });
-        
-        if (onComplete) {
-          onComplete();
-        }
-      } catch (error) {
-        console.error('Error submitting verification:', error);
-        setIsSubmitting(false);
-        toast({
-          title: "Submission Failed",
-          description: "There was an error submitting your verification. Please try again.",
-          variant: "destructive"
-        });
+            status: 'Pending',
+            submission_date: new Date().toISOString(),
+            user_id: user.id,
+            extracted_data: extractedData
+          }
+        ])
+        .select();
+      
+      if (error) {
+        throw error;
       }
-    };
-    
-    submitVerification();
+      
+      console.log("KYC verification submitted successfully:", data);
+      
+      setIsSubmitting(false);
+      setIsComplete(true);
+      
+      toast({
+        title: "Verification Submitted",
+        description: "Your identity verification has been submitted successfully.",
+      });
+      
+      if (onComplete) {
+        onComplete();
+      }
+    } catch (error) {
+      console.error('Error submitting verification:', error);
+      setIsSubmitting(false);
+      toast({
+        title: "Submission Failed",
+        description: "There was an error submitting your verification. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleEditData = () => {
@@ -830,151 +865,5 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
       
       <CardFooter className="flex justify-between">
         {!isComplete ? (
-          <Button onClick={handleSubmit} disabled={isSubmitting || !idFront || !idBack || !selfie}>
-            {isSubmitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Submitting...
-              </>
-            ) : (
-              <>Submit Verification</>
-            )}
-          </Button>
-        ) : (
-          <Button variant="outline" onClick={() => window.location.reload()}>
-            Go Back
-          </Button>
-        )}
-      </CardFooter>
-      
-      <Sheet open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-        <SheetContent className="sm:max-w-lg w-full" side="right">
-          <SheetHeader>
-            <SheetTitle>
-              {previewType === 'idFront' ? 'ID Front' : previewType === 'idBack' ? 'ID Back' : 'Selfie'} Preview
-            </SheetTitle>
-            <SheetDescription>
-              View your uploaded document.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="mt-6">
-            {previewType === 'idFront' && idFront && (
-              <img 
-                src={URL.createObjectURL(idFront)} 
-                alt="ID Front" 
-                className="w-full rounded-md"
-              />
-            )}
-            {previewType === 'idBack' && idBack && (
-              <img 
-                src={URL.createObjectURL(idBack)} 
-                alt="ID Back" 
-                className="w-full rounded-md"
-              />
-            )}
-            {previewType === 'selfie' && selfie && (
-              <img 
-                src={URL.createObjectURL(selfie)} 
-                alt="Selfie" 
-                className="w-full rounded-md"
-              />
-            )}
-          </div>
-        </SheetContent>
-      </Sheet>
-      
-      <Dialog open={isCameraOpen} onOpenChange={(open) => {
-        if (!open) handleCameraClose();
-        setIsCameraOpen(open);
-      }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              Capture {captureType === 'idFront' ? 'ID Front' : captureType === 'idBack' ? 'ID Back' : 'Selfie'}
-            </DialogTitle>
-          </DialogHeader>
-          
-          <div className="relative mt-2 bg-black rounded-md overflow-hidden">
-            <video 
-              ref={videoRef} 
-              autoPlay 
-              playsInline
-              className="w-full h-auto max-h-[50vh]"
-            />
-            <canvas ref={canvasRef} className="hidden" />
-          </div>
-          
-          <DialogFooter className="flex sm:justify-between">
-            <Button variant="secondary" onClick={handleCameraClose}>
-              <X className="mr-2 h-4 w-4" />
-              Cancel
-            </Button>
-            <Button onClick={capturePhoto}>
-              <Camera className="mr-2 h-4 w-4" />
-              Capture
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              Edit {editDialogType === 'idNumber' ? 'ID Number' : editDialogType === 'name' ? 'Name' : 'Date of Birth'}
-            </DialogTitle>
-          </DialogHeader>
-          
-          <div className="mt-4">
-            {editDialogType === 'idNumber' && (
-              <div className="grid gap-2">
-                <Label htmlFor="id-number">Aadhaar Number</Label>
-                <Input 
-                  id="id-number" 
-                  value={editedIdNumber} 
-                  onChange={(e) => setEditedIdNumber(e.target.value)} 
-                  placeholder="XXXX XXXX XXXX"
-                />
-              </div>
-            )}
-            
-            {editDialogType === 'name' && (
-              <div className="grid gap-2">
-                <Label htmlFor="name">Full Name</Label>
-                <Input 
-                  id="name" 
-                  value={editedName} 
-                  onChange={(e) => setEditedName(e.target.value)} 
-                  placeholder="Your full name"
-                />
-              </div>
-            )}
-            
-            {editDialogType === 'dob' && (
-              <div className="grid gap-2">
-                <Label htmlFor="dob">Date of Birth</Label>
-                <Input 
-                  id="dob" 
-                  value={editedDob} 
-                  onChange={(e) => setEditedDob(e.target.value)} 
-                  placeholder="DD/MM/YYYY"
-                />
-              </div>
-            )}
-          </div>
-          
-          <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleEditData}>
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
-  );
-};
-
-export default KycVerification;
+          <Button onClick={handleSubmit} disabled={isSubmitting || !idFront || !idBack || !selfie || !user}>
+            {isSubmitting ?
