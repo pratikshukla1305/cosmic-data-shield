@@ -1,7 +1,6 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7'
 import { Tesseract } from 'https://esm.sh/tesseract.js@5.0.4'
-import { cors } from 'https://deno.land/x/cors@0.1.0/mod.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
