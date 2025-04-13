@@ -1,10 +1,22 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7'
 import { Tesseract } from 'https://esm.sh/tesseract.js@5.0.4'
+import { cors } from 'https://deno.land/x/cors@0.1.0/mod.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+// Extended Aadhaar card extraction patterns
+const extractionPatterns = {
+  aadhaar: {
+    number: /[0-9]{4}\s?[0-9]{4}\s?[0-9]{4}/g,
+    name: /(Name|नाम)[:\s]+([^\n]+)/i,
+    dob: /(DOB|Date\s+of\s+Birth|जन्म\s+तिथि)[:\s]+([0-9]{1,2}[-/.][0-9]{1,2}[-/.][0-9]{2,4})/i,
+    gender: /(Male|Female|महिला|पुरुष|MALE|FEMALE)/i,
+    address: /(Address|पता)[:\s]+([^\n]+(\n[^\n]+)*)/i
+  }
 }
 
 Deno.serve(async (req) => {
@@ -35,6 +47,8 @@ Deno.serve(async (req) => {
       )
     }
 
+    console.log(`Starting OCR processing for document: ${documentId}`)
+
     // Get the document
     const { data: documentData, error: docError } = await supabase
       .from('kyc_document_extractions')
@@ -58,14 +72,25 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Start OCR processing
-    console.log(`Starting OCR processing for document: ${documentId}`)
-    
     // Get public URL for the document
     const documentUrl = documentData.document_url
     
-    // Initialize Tesseract
-    const worker = await Tesseract.createWorker('eng')
+    // Initialize Tesseract with Hindi language support for better Aadhaar recognition
+    const worker = await Tesseract.createWorker({
+      langPath: 'https://raw.githubusercontent.com/naptha/tessdata/gh-pages/4.0.0_best',
+      langs: ['eng', 'hin'],
+      logger: m => console.log(m)
+    });
+    
+    // Load both English and Hindi for better Aadhaar card recognition
+    await worker.loadLanguage('eng+hin');
+    await worker.initialize('eng+hin');
+    
+    // Set recognition parameters for improved accuracy
+    await worker.setParameters({
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/-: ',
+      preserve_interword_spaces: '1',
+    });
     
     // Process the image
     console.log(`Processing image: ${documentUrl}`)
@@ -74,56 +99,45 @@ Deno.serve(async (req) => {
     
     console.log('OCR completed')
     
-    // Extract data from OCR results with regex patterns for Aadhaar cards
+    // Extract data from OCR results with enhanced regex patterns for Aadhaar cards
     const text = result.data.text
     console.log('Extracted text:', text)
     
     // Initialize extracted data
-    let extractedData = {}
+    let extractedData: Record<string, string> = {}
     
     // Extract Aadhaar number (12 digits, may have spaces)
-    const aadhaarPattern = /[0-9]{4}\s?[0-9]{4}\s?[0-9]{4}/g
-    const aadhaarMatch = text.match(aadhaarPattern)
-    
+    const aadhaarMatch = text.match(extractionPatterns.aadhaar.number)
     if (aadhaarMatch) {
-      extractedData = { 
-        ...extractedData, 
-        aadhaar_number: aadhaarMatch[0].replace(/\s/g, ''),
-      }
+      extractedData.aadhaar_number = aadhaarMatch[0].replace(/\s/g, '')
     }
     
-    // Try to extract name (Assuming pattern "Name: XXX" or just guessing based on position)
-    const namePattern = /Name[:\s]+([^\n]+)/i
-    const nameMatch = text.match(namePattern)
-    
-    if (nameMatch && nameMatch[1]) {
-      extractedData = { 
-        ...extractedData, 
-        name: nameMatch[1].trim(),
-      }
+    // Try to extract name with improved regex
+    const nameMatch = text.match(extractionPatterns.aadhaar.name)
+    if (nameMatch && nameMatch[2]) {
+      extractedData.name = nameMatch[2].trim()
     }
     
-    // Try to extract DOB (formats like DD/MM/YYYY or YYYY-MM-DD)
-    const dobPattern = /(?:DOB|Date\s+of\s+Birth)[:\s]+([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})/i
-    const dobMatch = text.match(dobPattern)
-    
-    if (dobMatch && dobMatch[1]) {
-      extractedData = { 
-        ...extractedData, 
-        dob: dobMatch[1].trim(),
-      }
+    // Try to extract DOB with improved regex
+    const dobMatch = text.match(extractionPatterns.aadhaar.dob)
+    if (dobMatch && dobMatch[2]) {
+      extractedData.dob = dobMatch[2].trim()
     }
     
-    // Try to extract gender
-    const genderPattern = /(?:(?:gender|sex)[:\s]+)?(male|female|transgender)/i
-    const genderMatch = text.match(genderPattern)
-    
+    // Try to extract gender with improved regex
+    const genderMatch = text.match(extractionPatterns.aadhaar.gender)
     if (genderMatch && genderMatch[1]) {
-      extractedData = { 
-        ...extractedData, 
-        gender: genderMatch[1].toUpperCase(),
-      }
+      const gender = genderMatch[1].toUpperCase()
+      extractedData.gender = gender === 'MALE' || gender === 'पुरुष' ? 'MALE' : 'FEMALE'
     }
+    
+    // Try to extract address with improved regex
+    const addressMatch = text.match(extractionPatterns.aadhaar.address)
+    if (addressMatch && addressMatch[2]) {
+      extractedData.address = addressMatch[2].trim().replace(/\n/g, ', ')
+    }
+    
+    console.log('Extracted data:', extractedData)
     
     // Update the document with extracted data
     const { error: updateError } = await supabase

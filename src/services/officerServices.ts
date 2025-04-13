@@ -128,6 +128,23 @@ export const updateSosAlertStatus = async (
       console.error('Error updating SOS alert status:', error);
       throw error;
     }
+    
+    // Create notification for the user if contact_user is true
+    if (status === 'resolved' || status === 'in_progress') {
+      const { data: alertData } = await supabase
+        .from('sos_alerts')
+        .select('reported_by, contact_user')
+        .eq('alert_id', alertId)
+        .single();
+      
+      if (alertData?.contact_user && alertData?.reported_by) {
+        await supabase.from('user_notifications').insert([{
+          notification_type: 'sos_status_update',
+          message: `Your SOS alert has been ${status === 'resolved' ? 'resolved' : 'assigned to an officer'}`,
+          user_id: alertData.reported_by
+        }]);
+      }
+    }
   } catch (error) {
     console.error('Error in updateSosAlertStatus:', error);
     throw error;

@@ -16,7 +16,7 @@ export const uploadKycDocument = async (
       return null;
     }
     
-    // 1. Upload file to storage
+    // 1. Upload file to storage using the kyc-documents bucket
     const fileExt = file.name.split('.').pop();
     const fileName = `${uuidv4()}.${fileExt}`;
     const filePath = `${userId}/${verificationType}_${fileName}`;
@@ -66,9 +66,15 @@ export const uploadKycDocument = async (
     // 4. Trigger OCR processing if it's not a selfie
     if (verificationType !== 'selfie' && docData?.id) {
       try {
-        await supabase.functions.invoke('process-kyc-ocr', {
+        const { data, error } = await supabase.functions.invoke('process-kyc-ocr', {
           body: { documentId: docData.id }
         });
+        
+        if (error) {
+          console.error('Error invoking OCR function:', error);
+        } else {
+          console.log('OCR processing initiated successfully:', data);
+        }
       } catch (ocrError) {
         console.error('Error triggering OCR processing:', ocrError);
         // Continue anyway as this shouldn't block the user
@@ -134,5 +140,28 @@ export const updateExtractedKycData = async (verificationId: number, editedData:
     console.error('Error in updateExtractedKycData:', error);
     toast.error('Update failed. Please try again.');
     return false;
+  }
+};
+
+// Check for existing verification in progress
+export const getExistingVerification = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('kyc_verifications')
+      .select('*, kyc_document_extractions(*)')
+      .eq('user_id', userId)
+      .eq('status', 'Pending')
+      .order('submission_date', { ascending: false })
+      .limit(1);
+      
+    if (error) {
+      console.error('Error getting existing verification:', error);
+      return null;
+    }
+    
+    return data && data.length > 0 ? data[0] : null;
+  } catch (error) {
+    console.error('Error in getExistingVerification:', error);
+    return null;
   }
 };

@@ -6,9 +6,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FileUploader } from '@/components/ui/file-uploader';
 import { toast } from '@/hooks/use-toast';
 import { submitKycVerification } from '@/services/userServices';
-import { Loader2 } from 'lucide-react';
+import { Loader2, CheckCircle2 } from 'lucide-react';
 import UserInfoCard from './UserInfoCard';
-import { uploadKycDocument } from '@/utils/kycUtils';
+import { uploadKycDocument, getExistingVerification } from '@/utils/kycUtils';
 import OcrDataEditor from './OcrDataEditor';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -30,6 +30,7 @@ interface KycVerificationProps {
 const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps) => {
   const [activeTab, setActiveTab] = useState<string>('id-front');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [verificationId, setVerificationId] = useState<number | null>(null);
   
   const [idFrontFile, setIdFrontFile] = useState<File | null>(null);
@@ -40,78 +41,107 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
   const [idBackProgress, setIdBackProgress] = useState<number>(0);
   const [selfieProgress, setSelfieProgress] = useState<number>(0);
   
-  const [extractedData, setExtractedData] = useState<any>(null);
-  const [ocrStatus, setOcrStatus] = useState<string>('pending');
-  
   const [idFrontUrl, setIdFrontUrl] = useState<string | null>(null);
   const [idBackUrl, setIdBackUrl] = useState<string | null>(null);
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null);
   
-  // Create a verification record when component loads
+  const [filesUploaded, setFilesUploaded] = useState<{
+    idFront: boolean;
+    idBack: boolean;
+    selfie: boolean;
+  }>({
+    idFront: false,
+    idBack: false,
+    selfie: false
+  });
+  
+  // Load existing verification data
   useEffect(() => {
-    const createVerificationRecord = async () => {
+    const loadExistingVerification = async () => {
+      setIsLoading(true);
       try {
-        // Check if we already have a verification in progress for this user
-        const { data: existingData, error: existingError } = await supabase
-          .from('kyc_verifications')
-          .select('id, status')
-          .eq('user_id', userId)
-          .eq('status', 'Pending')
-          .order('submission_date', { ascending: false })
-          .limit(1);
+        // Check for existing verification records
+        const existingVerification = await getExistingVerification(userId);
         
-        if (!existingError && existingData && existingData.length > 0) {
+        if (existingVerification) {
           // Use existing verification
-          setVerificationId(existingData[0].id);
-          return;
-        }
-        
-        // Create new verification record
-        const { data, error } = await supabase
-          .from('kyc_verifications')
-          .insert({
-            full_name: formData.fullName,
-            email: formData.email,
-            submission_date: new Date().toISOString(),
-            status: 'Pending',
-            user_id: userId
-          })
-          .select('id');
-        
-        if (error) {
-          console.error('Error creating verification record:', error);
-          toast({
-            title: 'Setup Error',
-            description: 'Could not initialize verification. Please try again.',
-            variant: 'destructive'
-          });
-          return;
-        }
-        
-        if (data && data.length > 0) {
-          setVerificationId(data[0].id);
+          setVerificationId(existingVerification.id);
+          
+          // Set previously uploaded document URLs
+          if (existingVerification.id_front) {
+            setIdFrontUrl(existingVerification.id_front);
+            setFilesUploaded(prev => ({ ...prev, idFront: true }));
+          }
+          
+          if (existingVerification.id_back) {
+            setIdBackUrl(existingVerification.id_back);
+            setFilesUploaded(prev => ({ ...prev, idBack: true }));
+          }
+          
+          if (existingVerification.selfie) {
+            setSelfieUrl(existingVerification.selfie);
+            setFilesUploaded(prev => ({ ...prev, selfie: true }));
+          }
+          
+          // If all documents are already uploaded, go to review tab
+          if (existingVerification.id_front && existingVerification.id_back && existingVerification.selfie) {
+            setActiveTab('review');
+          }
+        } else {
+          // Create new verification record
+          await createVerificationRecord();
         }
       } catch (error) {
-        console.error('Error in createVerificationRecord:', error);
+        console.error('Error loading existing verification:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load verification data. Please try again.',
+          variant: 'destructive'
+        });
+      } finally {
+        setIsLoading(false);
       }
     };
     
     if (userId) {
-      createVerificationRecord();
+      loadExistingVerification();
     }
   }, [userId, formData]);
-
-  const uploadFiles = async () => {
-    if (!idFrontFile) {
-      toast({
-        title: "ID Front Required",
-        description: "Please upload the front of your ID document",
-        variant: "destructive"
-      });
-      setActiveTab('id-front');
-      return;
+  
+  // Create verification record if needed
+  const createVerificationRecord = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('kyc_verifications')
+        .insert({
+          full_name: formData.fullName,
+          email: formData.email,
+          submission_date: new Date().toISOString(),
+          status: 'Pending',
+          user_id: userId
+        })
+        .select('id');
+      
+      if (error) {
+        console.error('Error creating verification record:', error);
+        toast({
+          title: 'Setup Error',
+          description: 'Could not initialize verification. Please try again.',
+          variant: 'destructive'
+        });
+        return;
+      }
+      
+      if (data && data.length > 0) {
+        setVerificationId(data[0].id);
+      }
+    } catch (error) {
+      console.error('Error in createVerificationRecord:', error);
     }
-    
+  };
+
+  // Handle file upload
+  const handleFileUpload = async (fileType: 'idFront' | 'idBack' | 'selfie', file: File) => {
     if (!verificationId) {
       toast({
         title: "Setup Error",
@@ -121,65 +151,115 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
       return;
     }
     
-    setIsLoading(true);
+    // Set progress state based on file type
+    const setProgress = {
+      idFront: setIdFrontProgress,
+      idBack: setIdBackProgress,
+      selfie: setSelfieProgress
+    }[fileType];
+    
+    // Document type based on file type
+    const documentType = {
+      idFront: 'aadhar_front',
+      idBack: 'aadhar_back',
+      selfie: 'selfie'
+    }[fileType];
     
     try {
       // Simulate upload progress
       let progress = 0;
       const progressInterval = setInterval(() => {
         progress += 5;
-        if (idFrontFile) setIdFrontProgress(Math.min(progress, 100));
-        if (idBackFile) setIdBackProgress(Math.min(progress, 100));
-        if (selfieFile) setSelfieProgress(Math.min(progress, 100));
+        setProgress(Math.min(progress, 95));
         
-        if (progress >= 100) {
+        if (progress >= 95) {
           clearInterval(progressInterval);
         }
       }, 100);
       
-      // Upload documents to storage and create records in database
-      let frontResult = null;
-      let backResult = null;
-      let selfieResult = null;
+      // Upload the file
+      const result = await uploadKycDocument(file, userId, documentType, verificationId);
+      clearInterval(progressInterval);
       
-      if (idFrontFile) {
-        frontResult = await uploadKycDocument(idFrontFile, userId, 'aadhar_front', verificationId);
-        if (frontResult?.documentUrl) {
-          setIdFrontUrl(frontResult.documentUrl);
+      if (result?.documentUrl) {
+        // Update the appropriate URL state
+        if (fileType === 'idFront') {
+          setIdFrontUrl(result.documentUrl);
+          // Update verification record with the URL
+          await supabase
+            .from('kyc_verifications')
+            .update({ id_front: result.documentUrl })
+            .eq('id', verificationId);
+        } else if (fileType === 'idBack') {
+          setIdBackUrl(result.documentUrl);
+          // Update verification record with the URL
+          await supabase
+            .from('kyc_verifications')
+            .update({ id_back: result.documentUrl })
+            .eq('id', verificationId);
+        } else if (fileType === 'selfie') {
+          setSelfieUrl(result.documentUrl);
+          // Update verification record with the URL
+          await supabase
+            .from('kyc_verifications')
+            .update({ selfie: result.documentUrl })
+            .eq('id', verificationId);
         }
+        
+        // Set progress to 100%
+        setProgress(100);
+        
+        // Mark file as uploaded
+        setFilesUploaded(prev => ({ ...prev, [fileType]: true }));
+        
+        toast({
+          title: "Upload Successful",
+          description: `Your ${fileType === 'idFront' ? 'ID front' : fileType === 'idBack' ? 'ID back' : 'selfie'} has been uploaded.`
+        });
+      } else {
+        throw new Error('Upload failed');
       }
-      
-      if (idBackFile) {
-        backResult = await uploadKycDocument(idBackFile, userId, 'aadhar_back', verificationId);
-        if (backResult?.documentUrl) {
-          setIdBackUrl(backResult.documentUrl);
-        }
-      }
-      
-      if (selfieFile) {
-        selfieResult = await uploadKycDocument(selfieFile, userId, 'selfie', verificationId);
-        if (selfieResult?.documentUrl) {
-          setSelfieUrl(selfieResult.documentUrl);
-        }
-      }
-      
-      // Update verification record with document URLs
-      await supabase
-        .from('kyc_verifications')
-        .update({
-          id_front: frontResult?.documentUrl || null,
-          id_back: backResult?.documentUrl || null,
-          selfie: selfieResult?.documentUrl || null
-        })
-        .eq('id', verificationId);
-      
+    } catch (error: any) {
+      console.error(`Error uploading ${fileType}:`, error);
+      setProgress(0);
+      toast({
+        title: "Upload Failed",
+        description: error.message || `Failed to upload ${fileType}. Please try again.`,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const submitVerification = async () => {
+    if (!verificationId) {
+      toast({
+        title: "Setup Error",
+        description: "Verification record not initialized. Please try again.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (!idFrontUrl) {
+      toast({
+        title: "ID Front Required",
+        description: "Please upload the front of your ID document",
+        variant: "destructive"
+      });
+      setActiveTab('id-front');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
+    try {
       // Submit verification data to complete the process
       await submitKycVerification({
         fullName: formData.fullName,
         email: formData.email,
-        idFront: frontResult?.documentUrl || null,
-        idBack: backResult?.documentUrl || null,
-        selfie: selfieResult?.documentUrl || null,
+        idFront: idFrontUrl,
+        idBack: idBackUrl,
+        selfie: selfieUrl,
         userId
       });
       
@@ -188,25 +268,23 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
         description: "Your identity verification has been submitted successfully",
       });
       
-      clearInterval(progressInterval);
       onComplete();
-      
     } catch (error: any) {
-      console.error("Error uploading verification documents:", error);
+      console.error("Error submitting verification:", error);
       toast({
         title: "Submission Failed",
         description: error.message || "Failed to submit verification. Please try again.",
         variant: "destructive"
       });
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
   
   const handleNextStep = () => {
     // Move to next tab
     if (activeTab === 'id-front') {
-      if (!idFrontFile && !idFrontUrl) {
+      if (!idFrontUrl && !filesUploaded.idFront) {
         toast({
           title: "ID Front Required",
           description: "Please upload the front of your ID document",
@@ -222,7 +300,14 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
     }
   };
 
-  const isReadyToSubmit = idFrontUrl !== null || idFrontFile !== null;
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-shield-blue mb-4" />
+        <p className="text-gray-600">Preparing your verification...</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -246,7 +331,10 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
               
               {idFrontUrl ? (
                 <div className="mb-4">
-                  <p className="text-sm text-green-600 mb-2">Document uploaded successfully</p>
+                  <div className="flex items-center space-x-2 text-green-600 mb-2">
+                    <CheckCircle2 className="h-5 w-5" />
+                    <p className="text-sm">Document uploaded successfully</p>
+                  </div>
                   <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
                     <img 
                       src={idFrontUrl} 
@@ -258,7 +346,10 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
               ) : (
                 <FileUploader
                   id="id-front"
-                  onFileSelected={(file) => setIdFrontFile(file)}
+                  onFileSelected={(file) => {
+                    setIdFrontFile(file);
+                    handleFileUpload('idFront', file);
+                  }}
                   accept="image/*"
                   progress={idFrontProgress}
                   allowCapture={true}
@@ -270,7 +361,7 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
                 <Button 
                   onClick={handleNextStep} 
                   className="bg-shield-blue hover:bg-blue-700"
-                  disabled={(!idFrontFile && !idFrontUrl) || isLoading}
+                  disabled={(!idFrontUrl && !filesUploaded.idFront) || isSubmitting}
                 >
                   Continue to ID Back
                 </Button>
@@ -285,7 +376,10 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
               
               {idBackUrl ? (
                 <div className="mb-4">
-                  <p className="text-sm text-green-600 mb-2">Document uploaded successfully</p>
+                  <div className="flex items-center space-x-2 text-green-600 mb-2">
+                    <CheckCircle2 className="h-5 w-5" />
+                    <p className="text-sm">Document uploaded successfully</p>
+                  </div>
                   <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
                     <img 
                       src={idBackUrl} 
@@ -297,7 +391,10 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
               ) : (
                 <FileUploader
                   id="id-back"
-                  onFileSelected={(file) => setIdBackFile(file)}
+                  onFileSelected={(file) => {
+                    setIdBackFile(file);
+                    handleFileUpload('idBack', file);
+                  }}
                   accept="image/*"
                   progress={idBackProgress}
                   allowCapture={true}
@@ -309,14 +406,14 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
                 <Button 
                   variant="outline" 
                   onClick={() => setActiveTab('id-front')}
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 >
                   Back
                 </Button>
                 <Button 
                   onClick={handleNextStep} 
                   className="bg-shield-blue hover:bg-blue-700"
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 >
                   Continue to Selfie
                 </Button>
@@ -331,7 +428,10 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
               
               {selfieUrl ? (
                 <div className="mb-4">
-                  <p className="text-sm text-green-600 mb-2">Selfie uploaded successfully</p>
+                  <div className="flex items-center space-x-2 text-green-600 mb-2">
+                    <CheckCircle2 className="h-5 w-5" />
+                    <p className="text-sm">Selfie uploaded successfully</p>
+                  </div>
                   <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
                     <img 
                       src={selfieUrl} 
@@ -343,7 +443,10 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
               ) : (
                 <FileUploader
                   id="selfie"
-                  onFileSelected={(file) => setSelfieFile(file)}
+                  onFileSelected={(file) => {
+                    setSelfieFile(file);
+                    handleFileUpload('selfie', file);
+                  }}
                   accept="image/*"
                   progress={selfieProgress}
                   allowCapture={true}
@@ -355,14 +458,14 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
                 <Button 
                   variant="outline" 
                   onClick={() => setActiveTab('id-back')}
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 >
                   Back
                 </Button>
                 <Button 
                   onClick={handleNextStep} 
                   className="bg-shield-blue hover:bg-blue-700"
-                  disabled={isLoading || (!selfieFile && !selfieUrl)}
+                  disabled={isSubmitting || (!selfieUrl && !filesUploaded.selfie)}
                 >
                   Continue to Review
                 </Button>
@@ -383,16 +486,16 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
                 <Button 
                   variant="outline" 
                   onClick={() => setActiveTab('selfie')}
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 >
                   Back
                 </Button>
                 <Button 
-                  onClick={uploadFiles} 
+                  onClick={submitVerification} 
                   className="bg-green-600 hover:bg-green-700"
-                  disabled={!isReadyToSubmit || isLoading}
+                  disabled={!idFrontUrl || isSubmitting}
                 >
-                  {isLoading ? (
+                  {isSubmitting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Submitting...

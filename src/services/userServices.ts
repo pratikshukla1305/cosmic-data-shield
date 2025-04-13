@@ -8,17 +8,21 @@ export const submitSOSAlert = async (alertData: any): Promise<SOSAlert[]> => {
     const { data: sessionData } = await supabase.auth.getSession();
     const userId = sessionData?.session?.user?.id;
     
+    // Generate a unique alert ID
+    const alertId = `SOS-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    
     const alertToSubmit = {
       ...alertData,
       reported_by: userId || alertData.reported_by,
       reported_time: new Date().toISOString(),
       status: 'New',
-      alert_id: `SOS-${Date.now()}`, // Ensure unique ID
+      alert_id: alertId,
       device_info: alertData.device_info || JSON.stringify({
         userAgent: navigator.userAgent,
         platform: navigator.platform,
         timestamp: new Date().toISOString()
-      })
+      }),
+      urgency_level: alertData.urgency_level || 'high'
     };
     
     const { data, error } = await supabase
@@ -37,7 +41,7 @@ export const submitSOSAlert = async (alertData: any): Promise<SOSAlert[]> => {
         .from('voice_recordings')
         .insert([
           {
-            alert_id: alertToSubmit.alert_id,
+            alert_id: alertId,
             recording_url: alertData.voice_recording
           }
         ]);
@@ -48,15 +52,7 @@ export const submitSOSAlert = async (alertData: any): Promise<SOSAlert[]> => {
       }
     }
     
-    // Create notification for officers
-    try {
-      await supabase.from('officer_notifications').insert([{
-        notification_type: 'sos_alert',
-        message: `New SOS Alert: ${alertData.message || 'Emergency assistance needed'}`,
-      }]);
-    } catch (notifError) {
-      console.error("Error creating officer notification:", notifError);
-    }
+    // The trigger we created in the SQL migration will handle officer notification
     
     return data || [];
   } catch (error) {
@@ -66,17 +62,23 @@ export const submitSOSAlert = async (alertData: any): Promise<SOSAlert[]> => {
 };
 
 export const getUserSOSAlerts = async (userId: string): Promise<SOSAlert[]> => {
-  const { data, error } = await supabase
-    .from('sos_alerts')
-    .select('*')
-    .eq('reported_by', userId)
-    .order('reported_time', { ascending: false });
-  
-  if (error) {
+  try {
+    const { data, error } = await supabase
+      .from('sos_alerts')
+      .select('*, voice_recordings(*)')
+      .eq('reported_by', userId)
+      .order('reported_time', { ascending: false });
+    
+    if (error) {
+      console.error("Error fetching user SOS alerts:", error);
+      throw error;
+    }
+    
+    return data || [];
+  } catch (error) {
+    console.error("Error in getUserSOSAlerts:", error);
     throw error;
   }
-  
-  return data || [];
 };
 
 // KYC Verification
@@ -142,15 +144,7 @@ export const submitKycVerification = async (verificationData: any): Promise<any>
       }
     }
     
-    // Create notification for officers about new KYC submission
-    try {
-      await supabase.from('officer_notifications').insert([{
-        notification_type: 'kyc_submission',
-        message: `New KYC verification submitted by ${verificationData.fullName}`,
-      }]);
-    } catch (notifError) {
-      console.error("Error creating officer notification:", notifError);
-    }
+    // The trigger we created in the SQL migration will handle officer notification
     
     return { verificationId };
   } catch (error) {
@@ -167,7 +161,7 @@ export const getUserKycStatus = async (email: string): Promise<KycVerification |
     
     let query = supabase
       .from('kyc_verifications')
-      .select('*')
+      .select('*, kyc_document_extractions(*)')
       .order('submission_date', { ascending: false })
       .limit(1);
       
@@ -184,6 +178,7 @@ export const getUserKycStatus = async (email: string): Promise<KycVerification |
     const { data, error } = await query;
     
     if (error) {
+      console.error("Error fetching KYC status:", error);
       throw error;
     }
     
@@ -211,7 +206,7 @@ export const getUserKycStatus = async (email: string): Promise<KycVerification |
       }));
     }
     
-    // Add empty documents array to match the KycVerification type
+    // Add documents array to match the KycVerification type
     const kycData: KycVerification = {
       ...data[0],
       documents
