@@ -50,37 +50,18 @@ export const getUserSOSAlerts = async (userId: string): Promise<SOSAlert[]> => {
 // KYC Verification
 export const submitKycVerification = async (verificationData: any): Promise<KycVerification[]> => {
   try {
-    console.log('Submitting KYC verification with data:', verificationData);
-    
-    // First check if user is authenticated
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) {
-      throw new Error('Authentication required to submit KYC verification');
-    }
-    
-    // Make sure user_id is set correctly for RLS policies
-    const userId = session.user.id;
-    console.log('Current authenticated user ID:', userId);
-
-    // Prepare the verification data
-    const kycData = {
-      full_name: verificationData.fullName,
-      email: verificationData.email,
-      submission_date: new Date().toISOString(),
-      status: 'Pending',
-      id_front: verificationData.idFront,
-      id_back: verificationData.idBack,
-      selfie: verificationData.selfie,
-      user_id: userId, // Use the authenticated user's ID
-      extracted_data: verificationData.extractedData || {}
-    };
-
-    console.log('Prepared KYC data:', { ...kycData, id_front: '[REDACTED]', id_back: '[REDACTED]', selfie: '[REDACTED]' });
-    
-    // Insert the verification data
+    // First insert the main verification data
     const { data, error } = await supabase
       .from('kyc_verifications')
-      .insert([kycData])
+      .insert([{
+        full_name: verificationData.fullName,
+        email: verificationData.email,
+        submission_date: new Date().toISOString(),
+        status: 'Pending',
+        id_front: verificationData.idFront,
+        id_back: verificationData.idBack,
+        selfie: verificationData.selfie
+      }])
       .select();
     
     if (error) {
@@ -126,13 +107,6 @@ export const submitKycVerification = async (verificationData: any): Promise<KycV
 };
 
 export const getUserKycStatus = async (email: string): Promise<KycVerification | null> => {
-  // First check if user is authenticated
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user) {
-    console.warn('User not authenticated when getting KYC status');
-    return null;
-  }
-  
   const { data, error } = await supabase
     .from('kyc_verifications')
     .select('*')
