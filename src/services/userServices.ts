@@ -50,6 +50,13 @@ export const getUserSOSAlerts = async (userId: string): Promise<SOSAlert[]> => {
 // KYC Verification
 export const submitKycVerification = async (verificationData: any): Promise<KycVerification[]> => {
   try {
+    // Get the current user
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User is not authenticated');
+    }
+
     // First insert the main verification data
     const { data, error } = await supabase
       .from('kyc_verifications')
@@ -60,7 +67,9 @@ export const submitKycVerification = async (verificationData: any): Promise<KycV
         status: 'Pending',
         id_front: verificationData.idFront,
         id_back: verificationData.idBack,
-        selfie: verificationData.selfie
+        selfie: verificationData.selfie,
+        user_id: user.id, // Add user ID for RLS policies
+        extracted_data: verificationData.extractedData || {}
       }])
       .select();
     
@@ -106,37 +115,96 @@ export const submitKycVerification = async (verificationData: any): Promise<KycV
   }
 };
 
-export const getUserKycStatus = async (email: string): Promise<KycVerification | null> => {
-  const { data, error } = await supabase
-    .from('kyc_verifications')
-    .select('*')
-    .eq('email', email)
-    .order('submission_date', { ascending: false })
-    .limit(1)
-    .single();
-  
-  if (error && error.code !== 'PGRST116') { // PGRST116 is the error code for no rows returned
-    throw error;
-  }
-  
-  if (!data) {
+export const getUserKycStatus = async (): Promise<KycVerification | null> => {
+  try {
+    // Get the current user
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User is not authenticated');
+    }
+
+    const { data, error } = await supabase
+      .from('kyc_verifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('submission_date', { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') { // PGRST116 is the error code for no rows returned
+      throw error;
+    }
+    
+    if (!data) {
+      return null;
+    }
+    
+    // Get documents for this verification
+    const { data: documents, error: docError } = await supabase
+      .from('kyc_documents')
+      .select('*')
+      .eq('verification_id', data.id);
+    
+    if (docError) {
+      console.error("Error fetching KYC documents:", docError);
+    }
+    
+    return {
+      ...data,
+      documents: documents || []
+    };
+  } catch (error) {
+    console.error('Error in getUserKycStatus:', error);
     return null;
   }
-  
-  // Get documents for this verification
-  const { data: documents, error: docError } = await supabase
-    .from('kyc_documents')
-    .select('*')
-    .eq('verification_id', data.id);
-  
-  if (docError) {
-    console.error("Error fetching KYC documents:", docError);
+};
+
+// User KYC Notifications for status updates
+export const getUserKycNotifications = async (): Promise<any[]> => {
+  try {
+    // Get the current user
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('user_kyc_notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching KYC notifications:', error);
+      return [];
+    }
+    
+    return data || [];
+  } catch (error) {
+    console.error('Error in getUserKycNotifications:', error);
+    return [];
   }
-  
-  return {
-    ...data,
-    documents: documents || []
-  };
+};
+
+export const markKycNotificationAsRead = async (notificationId: string): Promise<boolean> => {
+  try {
+    const { error } = await supabase
+      .from('user_kyc_notifications')
+      .update({ is_read: true })
+      .eq('id', notificationId);
+    
+    if (error) {
+      console.error('Error marking KYC notification as read:', error);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error in markKycNotificationAsRead:', error);
+    return false;
+  }
 };
 
 // Advisories

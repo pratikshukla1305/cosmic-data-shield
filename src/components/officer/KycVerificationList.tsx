@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Check, X, Eye, Loader2 } from 'lucide-react';
+import { Check, X, Eye, Loader2, AlertCircle } from 'lucide-react';
 import { 
   Dialog, 
   DialogContent, 
@@ -14,8 +14,11 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { getKycVerifications, updateKycVerificationStatus } from '@/services/officerServices';
 import { KycVerification } from '@/types/officer';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { supabase } from '@/integrations/supabase/client';
 
 interface KycVerificationListProps {
   limit?: number;
@@ -27,6 +30,9 @@ const KycVerificationList = ({ limit }: KycVerificationListProps) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('details');
   const [isLoading, setIsLoading] = useState(true);
+  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [showRejectionDialog, setShowRejectionDialog] = useState(false);
   const { toast } = useToast();
 
   const fetchVerifications = async () => {
@@ -50,16 +56,37 @@ const KycVerificationList = ({ limit }: KycVerificationListProps) => {
 
   useEffect(() => {
     fetchVerifications();
+
+    // Set up real-time subscription for KYC verification updates
+    const channel = supabase.channel('schema-db-changes')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'kyc_verifications'
+        },
+        (payload) => {
+          console.log('Received update for KYC verification:', payload);
+          fetchVerifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [limit]);
 
   const handleView = async (verification: KycVerification) => {
     setSelectedVerification(verification);
     setIsDialogOpen(true);
     setActiveTab('details');
+    setRejectionReason('');
   };
 
   const handleApprove = async (id: number) => {
     try {
+      setIsActionLoading(true);
       const officerAction = "Verification approved";
       await updateKycVerificationStatus(id, "Approved", officerAction);
       await fetchVerifications();
@@ -77,13 +104,24 @@ const KycVerificationList = ({ limit }: KycVerificationListProps) => {
         description: error.message,
         variant: "destructive",
       });
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
-  const handleReject = async (id: number, reason = "Verification rejected") => {
+  const handleReject = async (id: number) => {
+    setShowRejectionDialog(true);
+  };
+
+  const submitRejection = async () => {
+    if (!selectedVerification) return;
+    
     try {
-      await updateKycVerificationStatus(id, "Rejected", reason);
+      setIsActionLoading(true);
+      const reason = rejectionReason || "Verification rejected";
+      await updateKycVerificationStatus(selectedVerification.id, "Rejected", reason);
       await fetchVerifications();
+      setShowRejectionDialog(false);
       if (isDialogOpen) {
         setIsDialogOpen(false);
       }
@@ -98,6 +136,8 @@ const KycVerificationList = ({ limit }: KycVerificationListProps) => {
         description: error.message,
         variant: "destructive",
       });
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
@@ -127,6 +167,63 @@ const KycVerificationList = ({ limit }: KycVerificationListProps) => {
       </div>
     );
   }
+
+  const renderExtractedData = (verification: KycVerification) => {
+    if (!verification.extracted_data || Object.keys(verification.extracted_data).length === 0) {
+      return (
+        <div className="py-2 text-gray-500 text-sm italic">
+          No extracted data available
+        </div>
+      );
+    }
+
+    return (
+      <div className="bg-gray-50 rounded-md p-4 my-2">
+        <h4 className="text-sm font-medium text-gray-700 mb-2">Extracted Information</h4>
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          {verification.extracted_data.name && (
+            <div>
+              <span className="font-medium text-gray-600">Name:</span>{" "}
+              {verification.extracted_data.name}
+            </div>
+          )}
+          {verification.extracted_data.idNumber && (
+            <div>
+              <span className="font-medium text-gray-600">ID Number:</span>{" "}
+              {verification.extracted_data.idNumber}
+            </div>
+          )}
+          {verification.extracted_data.dob && (
+            <div>
+              <span className="font-medium text-gray-600">Date of Birth:</span>{" "}
+              {verification.extracted_data.dob}
+            </div>
+          )}
+          {verification.extracted_data.gender && (
+            <div>
+              <span className="font-medium text-gray-600">Gender:</span>{" "}
+              {verification.extracted_data.gender}
+            </div>
+          )}
+          {verification.extracted_data.address && (
+            <div className="col-span-2">
+              <span className="font-medium text-gray-600">Address:</span>{" "}
+              {verification.extracted_data.address}
+            </div>
+          )}
+        </div>
+        {verification.is_data_edited && (
+          <Alert className="mt-2 bg-blue-50">
+            <AlertCircle className="h-4 w-4 text-blue-600" />
+            <AlertTitle>Edited Data</AlertTitle>
+            <AlertDescription>
+              The user has manually edited some of the extracted data.
+            </AlertDescription>
+          </Alert>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -165,6 +262,7 @@ const KycVerificationList = ({ limit }: KycVerificationListProps) => {
                   size="sm" 
                   className="flex items-center text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
                   onClick={() => handleApprove(verification.id)}
+                  disabled={isActionLoading}
                 >
                   <Check className="h-4 w-4 mr-1" />
                   Approve
@@ -174,6 +272,7 @@ const KycVerificationList = ({ limit }: KycVerificationListProps) => {
                   size="sm" 
                   className="flex items-center text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
                   onClick={() => handleReject(verification.id)}
+                  disabled={isActionLoading}
                 >
                   <X className="h-4 w-4 mr-1" />
                   Reject
@@ -195,10 +294,11 @@ const KycVerificationList = ({ limit }: KycVerificationListProps) => {
             </DialogHeader>
             
             <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-              <TabsList className="grid grid-cols-3 mb-4">
+              <TabsList className="grid grid-cols-4 mb-4">
                 <TabsTrigger value="details">User Details</TabsTrigger>
                 <TabsTrigger value="documents">ID Documents</TabsTrigger>
                 <TabsTrigger value="selfie">Selfie</TabsTrigger>
+                <TabsTrigger value="extracted">Extracted Data</TabsTrigger>
               </TabsList>
               
               <TabsContent value="details" className="py-2">
@@ -332,6 +432,13 @@ const KycVerificationList = ({ limit }: KycVerificationListProps) => {
                   </div>
                 </div>
               </TabsContent>
+
+              <TabsContent value="extracted" className="py-2">
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">Extracted Information from ID</h3>
+                  {renderExtractedData(selectedVerification)}
+                </div>
+              </TabsContent>
             </Tabs>
             
             <DialogFooter className="flex justify-between mt-6">
@@ -345,15 +452,17 @@ const KycVerificationList = ({ limit }: KycVerificationListProps) => {
                     variant="outline" 
                     className="flex items-center text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
                     onClick={() => handleReject(selectedVerification.id)}
+                    disabled={isActionLoading}
                   >
-                    <X className="h-4 w-4 mr-1" />
+                    {isActionLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <X className="h-4 w-4 mr-1" />}
                     Reject
                   </Button>
                   <Button 
                     className="flex items-center bg-green-600 hover:bg-green-700 text-white"
                     onClick={() => handleApprove(selectedVerification.id)}
+                    disabled={isActionLoading}
                   >
-                    <Check className="h-4 w-4 mr-1" />
+                    {isActionLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Check className="h-4 w-4 mr-1" />}
                     Approve
                   </Button>
                 </div>
@@ -362,6 +471,44 @@ const KycVerificationList = ({ limit }: KycVerificationListProps) => {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Rejection reason dialog */}
+      <Dialog open={showRejectionDialog} onOpenChange={setShowRejectionDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rejection Reason</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for rejecting this verification.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="mt-4">
+            <Label htmlFor="rejection-reason">Reason</Label>
+            <Textarea
+              id="rejection-reason"
+              placeholder="Enter rejection reason"
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          
+          <DialogFooter className="mt-6">
+            <Button variant="outline" onClick={() => setShowRejectionDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="default"
+              className="bg-red-600 hover:bg-red-700 text-white" 
+              onClick={submitRejection}
+              disabled={isActionLoading}
+            >
+              {isActionLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+              Submit Rejection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
