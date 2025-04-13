@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { KycVerification, SOSAlert, CriminalProfile, CaseData } from '@/types/officer';
 
@@ -159,7 +160,7 @@ export const officerLogin = async (email: string, password: string): Promise<any
   }
 };
 
-// Add missing functions for OfficerCaseMap component
+// Fixed functions for OfficerCaseMap component
 export const getCases = async (): Promise<CaseData[]> => {
   try {
     const { data, error } = await supabase
@@ -181,9 +182,10 @@ export const getCases = async (): Promise<CaseData[]> => {
 
 export const createCase = async (caseData: Partial<CaseData>): Promise<CaseData> => {
   try {
+    // Fix: Don't wrap caseData in an array
     const { data, error } = await supabase
       .from('cases')
-      .insert([caseData])
+      .insert(caseData)
       .select()
       .single();
     
@@ -199,7 +201,7 @@ export const createCase = async (caseData: Partial<CaseData>): Promise<CaseData>
   }
 };
 
-// Add missing functions for OfficerCriminalPanel component
+// Fixed functions for OfficerCriminalPanel component
 export const getCriminalProfiles = async (): Promise<CriminalProfile[]> => {
   try {
     const { data, error } = await supabase
@@ -221,9 +223,10 @@ export const getCriminalProfiles = async (): Promise<CriminalProfile[]> => {
 
 export const createCriminalProfile = async (profileData: Partial<CriminalProfile>): Promise<CriminalProfile> => {
   try {
+    // Fix: Don't wrap profileData in an array
     const { data, error } = await supabase
       .from('criminal_profiles')
-      .insert([profileData])
+      .insert(profileData)
       .select()
       .single();
     
