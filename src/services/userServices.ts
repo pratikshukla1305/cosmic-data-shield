@@ -50,19 +50,36 @@ export const getUserSOSAlerts = async (userId: string): Promise<SOSAlert[]> => {
 // KYC Verification
 export const submitKycVerification = async (verificationData: any): Promise<KycVerification[]> => {
   try {
-    // First insert the main verification data
+    // Ensure we have a user ID stored with the verification
+    const userData = {
+      full_name: verificationData.fullName,
+      email: verificationData.email,
+      submission_date: new Date().toISOString(),
+      status: 'Pending',
+      id_front: verificationData.idFront,
+      id_back: verificationData.idBack,
+      selfie: verificationData.selfie,
+      user_id: verificationData.user_id || null,
+      extracted_data: {}
+    };
+
+    // If we have extracted data, add it to the verification
+    if (verificationData.documents && verificationData.documents.length > 0 && 
+        verificationData.documents[0].extracted_data) {
+      userData.extracted_data = verificationData.documents[0].extracted_data;
+    }
+    
+    console.log("Submitting KYC verification with data:", { 
+      ...userData, 
+      id_front: "BASE64_IMAGE_DATA", // Don't log the entire image data
+      id_back: "BASE64_IMAGE_DATA", 
+      selfie: "BASE64_IMAGE_DATA" 
+    });
+    
+    // Insert the main verification data
     const { data, error } = await supabase
       .from('kyc_verifications')
-      .insert([{
-        full_name: verificationData.fullName,
-        email: verificationData.email,
-        submission_date: new Date().toISOString(),
-        status: 'Pending',
-        id_front: verificationData.idFront,
-        id_back: verificationData.idBack,
-        selfie: verificationData.selfie,
-        user_id: verificationData.user_id || null
-      }])
+      .insert([userData])
       .select();
     
     if (error) {
@@ -108,6 +125,7 @@ export const submitKycVerification = async (verificationData: any): Promise<KycV
 };
 
 export const getUserKycStatus = async (email: string): Promise<KycVerification | null> => {
+  console.log("Checking KYC status for email:", email);
   const { data, error } = await supabase
     .from('kyc_verifications')
     .select('*')
@@ -117,12 +135,16 @@ export const getUserKycStatus = async (email: string): Promise<KycVerification |
     .single();
   
   if (error && error.code !== 'PGRST116') { // PGRST116 is the error code for no rows returned
+    console.error("Error fetching KYC status:", error);
     throw error;
   }
   
   if (!data) {
+    console.log("No KYC verification found for email:", email);
     return null;
   }
+  
+  console.log("Found KYC verification with status:", data.status);
   
   // Get documents for this verification
   const { data: documents, error: docError } = await supabase
@@ -142,6 +164,7 @@ export const getUserKycStatus = async (email: string): Promise<KycVerification |
 
 // Check for user notifications regarding KYC verifications
 export const getUserKycNotifications = async (userId: string): Promise<any[]> => {
+  console.log("Checking for KYC notifications for user ID:", userId);
   const { data, error } = await supabase
     .from('user_kyc_notifications')
     .select('*')
@@ -153,6 +176,7 @@ export const getUserKycNotifications = async (userId: string): Promise<any[]> =>
     throw error;
   }
 
+  console.log(`Found ${data?.length || 0} KYC notifications for user`);
   return data || [];
 };
 
@@ -167,6 +191,8 @@ export const markKycNotificationAsRead = async (notificationId: string): Promise
     console.error("Error marking KYC notification as read:", error);
     throw error;
   }
+  
+  console.log("Notification marked as read:", notificationId);
 };
 
 // Advisories
