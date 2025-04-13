@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -866,4 +867,129 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
       <CardFooter className="flex justify-between">
         {!isComplete ? (
           <Button onClick={handleSubmit} disabled={isSubmitting || !idFront || !idBack || !selfie || !user}>
-            {isSubmitting ?
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              <>Submit Verification</>
+            )}
+          </Button>
+        ) : null}
+      </CardFooter>
+
+      {/* Preview Sheet */}
+      <Sheet open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <SheetContent className="sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>
+              {previewType === "idFront" ? "ID Front" : previewType === "idBack" ? "ID Back" : "Selfie"}
+            </SheetTitle>
+            <SheetDescription>
+              View your uploaded document
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-8">
+            {previewType === "idFront" && idFront && (
+              <img src={URL.createObjectURL(idFront)} alt="ID Front" className="w-full rounded-md" />
+            )}
+            {previewType === "idBack" && idBack && (
+              <img src={URL.createObjectURL(idBack)} alt="ID Back" className="w-full rounded-md" />
+            )}
+            {previewType === "selfie" && selfie && (
+              <img src={URL.createObjectURL(selfie)} alt="Selfie" className="w-full rounded-md" />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Camera Sheet */}
+      <Sheet open={isCameraOpen} onOpenChange={setIsCameraOpen}>
+        <SheetContent className="sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>
+              {captureType === "idFront" ? "Capture ID Front" : captureType === "idBack" ? "Capture ID Back" : "Take Selfie"}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="mt-8">
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline
+              className="w-full rounded-md"
+              style={{ maxHeight: "70vh" }}
+            />
+            <canvas ref={canvasRef} className="hidden" />
+
+            <div className="flex justify-center mt-4 gap-4">
+              <Button onClick={capturePhoto}>
+                <Camera className="mr-2 h-4 w-4" /> Capture
+              </Button>
+              <Button variant="outline" onClick={handleCameraClose}>
+                <X className="mr-2 h-4 w-4" /> Cancel
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editDialogType === "idNumber" 
+                ? "Edit ID Number" 
+                : editDialogType === "name" 
+                  ? "Edit Name" 
+                  : "Edit Date of Birth"}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="py-4">
+            {editDialogType === "idNumber" && (
+              <div className="space-y-2">
+                <Label htmlFor="edit-id">Aadhaar Number</Label>
+                <Input 
+                  id="edit-id" 
+                  value={editedIdNumber} 
+                  onChange={(e) => setEditedIdNumber(e.target.value)}
+                />
+              </div>
+            )}
+            
+            {editDialogType === "name" && (
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Full Name</Label>
+                <Input 
+                  id="edit-name" 
+                  value={editedName} 
+                  onChange={(e) => setEditedName(e.target.value)}
+                />
+              </div>
+            )}
+            
+            {editDialogType === "dob" && (
+              <div className="space-y-2">
+                <Label htmlFor="edit-dob">Date of Birth</Label>
+                <Input 
+                  id="edit-dob" 
+                  value={editedDob} 
+                  onChange={(e) => setEditedDob(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleEditData}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+};
+
+export default KycVerification;
