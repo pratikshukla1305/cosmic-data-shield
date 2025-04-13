@@ -125,7 +125,7 @@ const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps)
         description: "We're extracting information from your ID. This may take a moment..."
       });
 
-      const imageUrl = URL.createObjectURL(idImage);\
+      const imageUrl = URL.createObjectURL(idImage);
       
       const img = new Image();
       img.onload = async () => {
