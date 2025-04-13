@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { SOSAlert, KycVerification, Advisory, CriminalProfile, CaseData, CriminalTip, KycDocument } from '@/types/officer';
 
@@ -12,7 +13,13 @@ export const submitSOSAlert = async (alertData: any): Promise<SOSAlert[]> => {
       ...alertData,
       reported_by: userId || alertData.reported_by,
       reported_time: new Date().toISOString(),
-      status: 'New'
+      status: 'New',
+      alert_id: `SOS-${Date.now()}`, // Ensure unique ID
+      device_info: alertData.device_info || JSON.stringify({
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        timestamp: new Date().toISOString()
+      })
     };
     
     const { data, error } = await supabase
@@ -31,7 +38,7 @@ export const submitSOSAlert = async (alertData: any): Promise<SOSAlert[]> => {
         .from('voice_recordings')
         .insert([
           {
-            alert_id: data[0].alert_id,
+            alert_id: alertToSubmit.alert_id,
             recording_url: alertData.voice_recording
           }
         ]);
@@ -76,25 +83,64 @@ export const getUserSOSAlerts = async (userId: string): Promise<SOSAlert[]> => {
 // KYC Verification
 export const submitKycVerification = async (verificationData: any): Promise<any> => {
   try {
-    // First insert the main verification data
-    const { data, error } = await supabase
-      .from('kyc_verifications')
-      .insert([{
-        full_name: verificationData.fullName,
-        email: verificationData.email,
-        submission_date: new Date().toISOString(),
-        status: 'Pending',
-        id_front: verificationData.idFront,
-        id_back: verificationData.idBack,
-        selfie: verificationData.selfie,
-        // Store user ID as text
-        user_id: verificationData.userId || null
-      }])
-      .select();
+    // Get current user details if available
+    const { data: sessionData } = await supabase.auth.getSession();
+    const userId = sessionData?.session?.user?.id || verificationData.userId;
     
-    if (error) {
-      console.error('Error submitting KYC verification:', error);
-      throw error;
+    // Check if there's already a pending verification record
+    const { data: existingData, error: existingError } = await supabase
+      .from('kyc_verifications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('status', 'Pending')
+      .order('submission_date', { ascending: false })
+      .limit(1);
+      
+    let verificationId;
+    
+    if (!existingError && existingData && existingData.length > 0) {
+      // Update existing verification
+      verificationId = existingData[0].id;
+      const { error } = await supabase
+        .from('kyc_verifications')
+        .update({
+          full_name: verificationData.fullName,
+          email: verificationData.email,
+          submission_date: new Date().toISOString(),
+          id_front: verificationData.idFront || null,
+          id_back: verificationData.idBack || null,
+          selfie: verificationData.selfie || null
+        })
+        .eq('id', verificationId);
+        
+      if (error) {
+        console.error('Error updating KYC verification:', error);
+        throw error;
+      }
+    } else {
+      // Insert new verification
+      const { data, error } = await supabase
+        .from('kyc_verifications')
+        .insert([{
+          full_name: verificationData.fullName,
+          email: verificationData.email,
+          submission_date: new Date().toISOString(),
+          status: 'Pending',
+          user_id: userId,
+          id_front: verificationData.idFront,
+          id_back: verificationData.idBack,
+          selfie: verificationData.selfie
+        }])
+        .select();
+      
+      if (error) {
+        console.error('Error submitting KYC verification:', error);
+        throw error;
+      }
+      
+      if (data && data.length > 0) {
+        verificationId = data[0].id;
+      }
     }
     
     // Create notification for officers about new KYC submission
@@ -107,8 +153,7 @@ export const submitKycVerification = async (verificationData: any): Promise<any>
       console.error("Error creating officer notification:", notifError);
     }
     
-    console.log('KYC verification submitted successfully:', data);
-    return data || [];
+    return { verificationId };
   } catch (error) {
     console.error('Error in submitKycVerification:', error);
     throw error;
@@ -147,10 +192,27 @@ export const getUserKycStatus = async (email: string): Promise<KycVerification |
       return null;
     }
     
+    // Get all documents for this verification
+    const { data: documentsData, error: documentsError } = await supabase
+      .from('kyc_document_extractions')
+      .select('*')
+      .eq('verification_id', data[0].id);
+      
+    let documents: KycDocument[] = [];
+    
+    if (!documentsError && documentsData) {
+      documents = documentsData.map((doc: any) => ({
+        id: doc.id,
+        type: doc.document_type,
+        url: doc.document_url,
+        created_at: doc.created_at
+      }));
+    }
+    
     // Add empty documents array to match the KycVerification type
     const kycData: KycVerification = {
       ...data[0],
-      documents: [] // Initialize with empty array to satisfy the type
+      documents
     };
     
     return kycData;

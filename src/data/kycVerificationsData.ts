@@ -3,6 +3,14 @@
 
 export type VerificationStatus = "pending" | "approved" | "rejected" | "none";
 
+export interface KycDocumentData {
+  id: string;
+  type: string;
+  url: string;
+  extractedData?: any;
+  created_at?: string;
+}
+
 export interface KycVerificationData {
   id: number;
   fullName: string;
@@ -12,6 +20,9 @@ export interface KycVerificationData {
   idFrontUrl?: string;
   idBackUrl?: string;
   selfieUrl?: string;
+  documents?: KycDocumentData[];
+  extractedData?: any;
+  ocrStatus?: string;
 }
 
 export const mockKycVerifications: KycVerificationData[] = [
@@ -23,7 +34,24 @@ export const mockKycVerifications: KycVerificationData[] = [
     status: "approved",
     idFrontUrl: "https://example.com/id-front.jpg",
     idBackUrl: "https://example.com/id-back.jpg",
-    selfieUrl: "https://example.com/selfie.jpg"
+    selfieUrl: "https://example.com/selfie.jpg",
+    documents: [
+      {
+        id: "1",
+        type: "aadhar_front",
+        url: "https://example.com/id-front.jpg"
+      },
+      {
+        id: "2",
+        type: "aadhar_back",
+        url: "https://example.com/id-back.jpg"
+      },
+      {
+        id: "3",
+        type: "selfie",
+        url: "https://example.com/selfie.jpg"
+      }
+    ]
   },
   {
     id: 2,
@@ -47,7 +75,7 @@ export const mockKycVerifications: KycVerificationData[] = [
   }
 ];
 
-// Add the missing function
+// This function determines verification status for a user
 export const getUserVerificationStatus = (userId: string): VerificationStatus => {
   // In a real application, this would call an API or check a database
   // For now, we'll just return a random status for demonstration purposes
@@ -59,4 +87,3 @@ export const getUserVerificationStatus = (userId: string): VerificationStatus =>
   
   return statuses[statusIndex];
 };
-

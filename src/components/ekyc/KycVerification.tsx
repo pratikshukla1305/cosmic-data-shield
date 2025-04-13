@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -8,6 +8,9 @@ import { toast } from '@/hooks/use-toast';
 import { submitKycVerification } from '@/services/userServices';
 import { Loader2 } from 'lucide-react';
 import UserInfoCard from './UserInfoCard';
+import { uploadKycDocument } from '@/utils/kycUtils';
+import OcrDataEditor from './OcrDataEditor';
+import { supabase } from '@/integrations/supabase/client';
 
 interface KycVerificationProps {
   onComplete: () => void;
@@ -27,6 +30,7 @@ interface KycVerificationProps {
 const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps) => {
   const [activeTab, setActiveTab] = useState<string>('id-front');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [verificationId, setVerificationId] = useState<number | null>(null);
   
   const [idFrontFile, setIdFrontFile] = useState<File | null>(null);
   const [idBackFile, setIdBackFile] = useState<File | null>(null);
@@ -36,6 +40,67 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
   const [idBackProgress, setIdBackProgress] = useState<number>(0);
   const [selfieProgress, setSelfieProgress] = useState<number>(0);
   
+  const [extractedData, setExtractedData] = useState<any>(null);
+  const [ocrStatus, setOcrStatus] = useState<string>('pending');
+  
+  const [idFrontUrl, setIdFrontUrl] = useState<string | null>(null);
+  const [idBackUrl, setIdBackUrl] = useState<string | null>(null);
+  const [selfieUrl, setSelfieUrl] = useState<string | null>(null);
+  
+  // Create a verification record when component loads
+  useEffect(() => {
+    const createVerificationRecord = async () => {
+      try {
+        // Check if we already have a verification in progress for this user
+        const { data: existingData, error: existingError } = await supabase
+          .from('kyc_verifications')
+          .select('id, status')
+          .eq('user_id', userId)
+          .eq('status', 'Pending')
+          .order('submission_date', { ascending: false })
+          .limit(1);
+        
+        if (!existingError && existingData && existingData.length > 0) {
+          // Use existing verification
+          setVerificationId(existingData[0].id);
+          return;
+        }
+        
+        // Create new verification record
+        const { data, error } = await supabase
+          .from('kyc_verifications')
+          .insert({
+            full_name: formData.fullName,
+            email: formData.email,
+            submission_date: new Date().toISOString(),
+            status: 'Pending',
+            user_id: userId
+          })
+          .select('id');
+        
+        if (error) {
+          console.error('Error creating verification record:', error);
+          toast({
+            title: 'Setup Error',
+            description: 'Could not initialize verification. Please try again.',
+            variant: 'destructive'
+          });
+          return;
+        }
+        
+        if (data && data.length > 0) {
+          setVerificationId(data[0].id);
+        }
+      } catch (error) {
+        console.error('Error in createVerificationRecord:', error);
+      }
+    };
+    
+    if (userId) {
+      createVerificationRecord();
+    }
+  }, [userId, formData]);
+
   const uploadFiles = async () => {
     if (!idFrontFile) {
       toast({
@@ -44,6 +109,15 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
         variant: "destructive"
       });
       setActiveTab('id-front');
+      return;
+    }
+    
+    if (!verificationId) {
+      toast({
+        title: "Setup Error",
+        description: "Verification record not initialized. Please try again.",
+        variant: "destructive"
+      });
       return;
     }
     
@@ -63,18 +137,49 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
         }
       }, 100);
       
-      // Simulate file upload and get URLs (in a real app, this would upload to storage)
-      const idFrontUrl = idFrontFile ? await simulateFileUpload(idFrontFile) : null;
-      const idBackUrl = idBackFile ? await simulateFileUpload(idBackFile) : null; 
-      const selfieUrl = selfieFile ? await simulateFileUpload(selfieFile) : null;
+      // Upload documents to storage and create records in database
+      let frontResult = null;
+      let backResult = null;
+      let selfieResult = null;
       
-      // Submit verification data
+      if (idFrontFile) {
+        frontResult = await uploadKycDocument(idFrontFile, userId, 'aadhar_front', verificationId);
+        if (frontResult?.documentUrl) {
+          setIdFrontUrl(frontResult.documentUrl);
+        }
+      }
+      
+      if (idBackFile) {
+        backResult = await uploadKycDocument(idBackFile, userId, 'aadhar_back', verificationId);
+        if (backResult?.documentUrl) {
+          setIdBackUrl(backResult.documentUrl);
+        }
+      }
+      
+      if (selfieFile) {
+        selfieResult = await uploadKycDocument(selfieFile, userId, 'selfie', verificationId);
+        if (selfieResult?.documentUrl) {
+          setSelfieUrl(selfieResult.documentUrl);
+        }
+      }
+      
+      // Update verification record with document URLs
+      await supabase
+        .from('kyc_verifications')
+        .update({
+          id_front: frontResult?.documentUrl || null,
+          id_back: backResult?.documentUrl || null,
+          selfie: selfieResult?.documentUrl || null
+        })
+        .eq('id', verificationId);
+      
+      // Submit verification data to complete the process
       await submitKycVerification({
         fullName: formData.fullName,
         email: formData.email,
-        idFront: idFrontUrl,
-        idBack: idBackUrl,
-        selfie: selfieUrl,
+        idFront: frontResult?.documentUrl || null,
+        idBack: backResult?.documentUrl || null,
+        selfie: selfieResult?.documentUrl || null,
         userId
       });
       
@@ -98,21 +203,10 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
     }
   };
   
-  // Simulate file upload and return a URL
-  const simulateFileUpload = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        // In a real app, this would be the URL of the uploaded file
-        const fakeUrl = URL.createObjectURL(file);
-        resolve(fakeUrl);
-      }, 1000);
-    });
-  };
-  
   const handleNextStep = () => {
     // Move to next tab
     if (activeTab === 'id-front') {
-      if (!idFrontFile) {
+      if (!idFrontFile && !idFrontUrl) {
         toast({
           title: "ID Front Required",
           description: "Please upload the front of your ID document",
@@ -123,10 +217,12 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
       setActiveTab('id-back');
     } else if (activeTab === 'id-back') {
       setActiveTab('selfie');
+    } else if (activeTab === 'selfie') {
+      setActiveTab('review');
     }
   };
 
-  const isReadyToSubmit = idFrontFile !== null;
+  const isReadyToSubmit = idFrontUrl !== null || idFrontFile !== null;
 
   return (
     <div>
@@ -135,32 +231,46 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
       <Card className="mb-6">
         <CardContent className="p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid grid-cols-3 mb-6">
+            <TabsList className="grid grid-cols-4 mb-6">
               <TabsTrigger value="id-front">ID Front</TabsTrigger>
               <TabsTrigger value="id-back">ID Back</TabsTrigger>
               <TabsTrigger value="selfie">Selfie</TabsTrigger>
+              <TabsTrigger value="review">Review</TabsTrigger>
             </TabsList>
             
             <TabsContent value="id-front" className="space-y-4">
               <div className="text-center mb-4">
                 <h3 className="text-lg font-medium">Upload ID Document (Front)</h3>
-                <p className="text-sm text-gray-500">Please upload the front side of your ID card or passport</p>
+                <p className="text-sm text-gray-500">Please upload the front side of your Aadhaar card</p>
               </div>
               
-              <FileUploader
-                id="id-front"
-                onFileSelected={(file) => setIdFrontFile(file)}
-                accept="image/*"
-                progress={idFrontProgress}
-                allowCapture={true}
-                captureLabel="ID Front"
-              />
+              {idFrontUrl ? (
+                <div className="mb-4">
+                  <p className="text-sm text-green-600 mb-2">Document uploaded successfully</p>
+                  <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
+                    <img 
+                      src={idFrontUrl} 
+                      alt="ID Front" 
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <FileUploader
+                  id="id-front"
+                  onFileSelected={(file) => setIdFrontFile(file)}
+                  accept="image/*"
+                  progress={idFrontProgress}
+                  allowCapture={true}
+                  captureLabel="Aadhaar Front"
+                />
+              )}
               
               <div className="flex justify-end mt-4">
                 <Button 
                   onClick={handleNextStep} 
                   className="bg-shield-blue hover:bg-blue-700"
-                  disabled={!idFrontFile || isLoading}
+                  disabled={(!idFrontFile && !idFrontUrl) || isLoading}
                 >
                   Continue to ID Back
                 </Button>
@@ -170,17 +280,30 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
             <TabsContent value="id-back" className="space-y-4">
               <div className="text-center mb-4">
                 <h3 className="text-lg font-medium">Upload ID Document (Back)</h3>
-                <p className="text-sm text-gray-500">Please upload the back side of your ID card</p>
+                <p className="text-sm text-gray-500">Please upload the back side of your Aadhaar card</p>
               </div>
               
-              <FileUploader
-                id="id-back"
-                onFileSelected={(file) => setIdBackFile(file)}
-                accept="image/*"
-                progress={idBackProgress}
-                allowCapture={true}
-                captureLabel="ID Back"
-              />
+              {idBackUrl ? (
+                <div className="mb-4">
+                  <p className="text-sm text-green-600 mb-2">Document uploaded successfully</p>
+                  <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
+                    <img 
+                      src={idBackUrl} 
+                      alt="ID Back" 
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <FileUploader
+                  id="id-back"
+                  onFileSelected={(file) => setIdBackFile(file)}
+                  accept="image/*"
+                  progress={idBackProgress}
+                  allowCapture={true}
+                  captureLabel="Aadhaar Back"
+                />
+              )}
               
               <div className="flex justify-between mt-4">
                 <Button 
@@ -206,19 +329,60 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
                 <p className="text-sm text-gray-500">Please take a clear photo of your face for verification</p>
               </div>
               
-              <FileUploader
-                id="selfie"
-                onFileSelected={(file) => setSelfieFile(file)}
-                accept="image/*"
-                progress={selfieProgress}
-                allowCapture={true}
-                captureLabel="Selfie"
-              />
+              {selfieUrl ? (
+                <div className="mb-4">
+                  <p className="text-sm text-green-600 mb-2">Selfie uploaded successfully</p>
+                  <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
+                    <img 
+                      src={selfieUrl} 
+                      alt="Selfie" 
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <FileUploader
+                  id="selfie"
+                  onFileSelected={(file) => setSelfieFile(file)}
+                  accept="image/*"
+                  progress={selfieProgress}
+                  allowCapture={true}
+                  captureLabel="Selfie"
+                />
+              )}
               
               <div className="flex justify-between mt-4">
                 <Button 
                   variant="outline" 
                   onClick={() => setActiveTab('id-back')}
+                  disabled={isLoading}
+                >
+                  Back
+                </Button>
+                <Button 
+                  onClick={handleNextStep} 
+                  className="bg-shield-blue hover:bg-blue-700"
+                  disabled={isLoading || (!selfieFile && !selfieUrl)}
+                >
+                  Continue to Review
+                </Button>
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="review" className="space-y-4">
+              <div className="text-center mb-4">
+                <h3 className="text-lg font-medium">Review & Confirm</h3>
+                <p className="text-sm text-gray-500">Please verify the extracted information from your documents</p>
+              </div>
+              
+              {verificationId && (
+                <OcrDataEditor verificationId={verificationId} />
+              )}
+              
+              <div className="flex justify-between mt-8">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setActiveTab('selfie')}
                   disabled={isLoading}
                 >
                   Back
@@ -248,8 +412,8 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
         <ul className="space-y-1 text-sm text-gray-600 list-disc pl-5">
           <li>Documents should be clear, with no glare or blur</li>
           <li>All corners of the document should be visible</li>
-          <li>For passport, scan the page with your photo</li>
-          <li>For ID card, upload both front and back</li>
+          <li>For Aadhaar card, upload both front and back sides</li>
+          <li>Ensure the Aadhaar number is clearly visible</li>
           <li>Selfie should clearly show your face without sunglasses</li>
         </ul>
       </div>
