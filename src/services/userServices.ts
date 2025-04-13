@@ -76,11 +76,51 @@ export const submitKycVerification = async (verificationData: any): Promise<KycV
       selfie: "BASE64_IMAGE_DATA" 
     });
     
-    // Insert the main verification data
-    const { data, error } = await supabase
+    // First check if a verification already exists for this email
+    const { data: existingData, error: existingError } = await supabase
       .from('kyc_verifications')
-      .insert([userData])
-      .select();
+      .select('id')
+      .eq('email', userData.email)
+      .maybeSingle();
+      
+    if (existingError && existingError.code !== 'PGRST116') {
+      console.error('Error checking for existing KYC verification:', existingError);
+      throw existingError;
+    }
+    
+    let data;
+    let error;
+    
+    // If a verification already exists, update it instead of inserting a new one
+    if (existingData) {
+      console.log('Found existing KYC verification, updating instead of inserting');
+      const { data: updatedData, error: updateError } = await supabase
+        .from('kyc_verifications')
+        .update({
+          full_name: userData.full_name,
+          submission_date: userData.submission_date,
+          id_front: userData.id_front,
+          id_back: userData.id_back,
+          selfie: userData.selfie,
+          user_id: userData.user_id,
+          extracted_data: userData.extracted_data,
+          status: 'Pending' // Reset status to pending if resubmitting
+        })
+        .eq('email', userData.email)
+        .select();
+        
+      data = updatedData;
+      error = updateError;
+    } else {
+      // Insert new verification if one doesn't exist
+      const { data: insertedData, error: insertError } = await supabase
+        .from('kyc_verifications')
+        .insert([userData])
+        .select();
+        
+      data = insertedData;
+      error = insertError;
+    }
     
     if (error) {
       console.error('Error submitting KYC verification:', error);
@@ -95,8 +135,32 @@ export const submitKycVerification = async (verificationData: any): Promise<KycV
     
     // If documents are provided, store them in the kyc_documents table
     if (verificationData.documents && verificationData.documents.length > 0) {
+      // First check if documents already exist for this verification
+      const verificationId = data[0].id;
+      const { data: existingDocs, error: existingDocsError } = await supabase
+        .from('kyc_documents')
+        .select('*')
+        .eq('verification_id', verificationId);
+        
+      if (existingDocsError) {
+        console.error("Error checking for existing KYC documents:", existingDocsError);
+      }
+      
+      if (existingDocs && existingDocs.length > 0) {
+        // Delete existing documents before inserting new ones
+        const { error: deleteError } = await supabase
+          .from('kyc_documents')
+          .delete()
+          .eq('verification_id', verificationId);
+          
+        if (deleteError) {
+          console.error("Error deleting existing KYC documents:", deleteError);
+        }
+      }
+      
+      // Insert new documents
       const documentsToInsert = verificationData.documents.map((doc: any) => ({
-        verification_id: data[0].id,
+        verification_id: verificationId,
         document_type: doc.type,
         document_url: doc.url,
         extracted_data: doc.extracted_data || null
