@@ -7,6 +7,8 @@ import {
   TabsList, 
   TabsTrigger 
 } from '@/components/ui/tabs';
+import { AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import KycForm from '@/components/ekyc/KycForm';
 import KycVerification from '@/components/ekyc/KycVerification';
 import KycCompleted from '@/components/ekyc/KycCompleted';
