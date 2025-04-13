@@ -1,140 +1,119 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { AlertCircle, CheckCircle, Clock, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Check, X, Clock, AlertTriangle } from 'lucide-react';
+import { getUserVerificationStatus, VerificationStatus } from '@/data/kycVerificationsData';
 
 interface KycCompletedProps {
-  status: 'pending' | 'approved' | 'rejected';
-  verificationDetails?: any;
-  onReset?: () => void;
+  status?: VerificationStatus;
+  userId?: string;
+  onReset?: () => void; // Add the missing prop
 }
 
-const KycCompleted = ({ status, verificationDetails, onReset }: KycCompletedProps) => {
-  const renderStatusIcon = () => {
-    switch (status) {
-      case 'approved':
-        return <ShieldCheck className="h-16 w-16 text-green-500" />;
-      case 'rejected':
-        return <ShieldAlert className="h-16 w-16 text-red-500" />;
-      case 'pending':
-      default:
-        return <Clock className="h-16 w-16 text-yellow-500" />;
-    }
-  };
-
-  const renderStatusBadge = () => {
-    switch (status) {
-      case 'approved':
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-200">Approved</Badge>;
-      case 'rejected':
-        return <Badge className="bg-red-100 text-red-800 hover:bg-red-200">Rejected</Badge>;
-      case 'pending':
-      default:
-        return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200">Pending</Badge>;
-    }
-  };
-
-  const renderStatusMessage = () => {
-    switch (status) {
-      case 'approved':
-        return "Congratulations! Your identity has been successfully verified. You now have full access to all features.";
-      case 'rejected':
-        return `Your verification was rejected. Reason: ${verificationDetails?.rejection_reason || 'Not provided'}. Please review the feedback and try again.`;
-      case 'pending':
-      default:
-        return "Your verification is currently under review. This usually takes 24-48 hours. We'll notify you once the verification is complete.";
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    if (!dateString) return 'Not available';
-    return new Date(dateString).toLocaleString();
-  };
-
+const KycCompleted = ({ 
+  status: initialStatus = 'pending',
+  userId = "user-123",
+  onReset 
+}: KycCompletedProps) => {
+  const [status, setStatus] = useState<VerificationStatus>(initialStatus);
+  
+  // Poll for status updates (in a real app this would use websockets or a real-time database)
+  useEffect(() => {
+    const checkStatus = () => {
+      const currentStatus = getUserVerificationStatus(userId);
+      if (currentStatus !== 'none' && currentStatus !== status) {
+        setStatus(currentStatus);
+      }
+    };
+    
+    // Check immediately and then set interval
+    checkStatus();
+    
+    const interval = setInterval(checkStatus, 5000);
+    return () => clearInterval(interval);
+  }, [userId, status]);
+  
   return (
     <Card className="max-w-lg mx-auto">
-      <CardHeader className="text-center">
-        <div className="flex justify-center mb-4">
-          {renderStatusIcon()}
-        </div>
-        <CardTitle className="flex items-center justify-center gap-2">
-          Verification Status {renderStatusBadge()}
-        </CardTitle>
+      <CardHeader>
+        <CardTitle>Identity Verification Status</CardTitle>
         <CardDescription>
-          {renderStatusMessage()}
+          {status === 'pending' 
+            ? 'Your verification is being reviewed by our team'
+            : status === 'approved'
+              ? 'Your identity has been successfully verified'
+              : 'Your identity verification has been rejected'
+          }
         </CardDescription>
       </CardHeader>
-      
-      {verificationDetails && (
-        <CardContent>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+      <CardContent className="flex flex-col items-center py-6">
+        {status === 'pending' && (
+          <div className="text-center">
+            <div className="inline-flex h-24 w-24 items-center justify-center rounded-full bg-yellow-100 mb-4">
+              <Clock className="h-12 w-12 text-yellow-600" />
+            </div>
+            <h3 className="text-xl font-medium mb-2">Verification In Progress</h3>
+            <p className="text-gray-500 mb-4">
+              We're currently reviewing your submitted documents. This typically takes 1-2 business days.
+            </p>
+          </div>
+        )}
+        
+        {status === 'approved' && (
+          <div className="text-center">
+            <div className="inline-flex h-24 w-24 items-center justify-center rounded-full bg-green-100 mb-4">
+              <Check className="h-12 w-12 text-green-600" />
+            </div>
+            <h3 className="text-xl font-medium mb-2">Verification Approved</h3>
+            <p className="text-gray-500 mb-4">
+              Your identity has been successfully verified. You now have full access to all features.
+            </p>
+          </div>
+        )}
+        
+        {status === 'rejected' && (
+          <div className="text-center">
+            <div className="inline-flex h-24 w-24 items-center justify-center rounded-full bg-red-100 mb-4">
+              <X className="h-12 w-12 text-red-600" />
+            </div>
+            <h3 className="text-xl font-medium mb-2">Verification Rejected</h3>
+            <p className="text-gray-500 mb-4">
+              Unfortunately, we couldn't verify your identity with the provided documents. Please retry with clearer documents.
+            </p>
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-4 mb-4 flex items-start">
+              <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 mr-2 flex-shrink-0" />
               <div>
-                <h3 className="text-sm font-semibold text-gray-500">Submission Date</h3>
-                <p>{formatDate(verificationDetails.submission_date)}</p>
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-gray-500">Email</h3>
-                <p>{verificationDetails.email}</p>
+                <h4 className="font-medium text-amber-800 mb-1">Possible reasons for rejection:</h4>
+                <ul className="text-sm text-amber-700 list-disc list-inside space-y-1">
+                  <li>The document image was blurry or unclear</li>
+                  <li>The selfie didn't match the ID photo</li>
+                  <li>The document appears to be expired or invalid</li>
+                  <li>Information on the document was not legible</li>
+                </ul>
               </div>
             </div>
-            
-            {status === 'approved' && (
-              <div className="mt-4 p-4 bg-green-50 rounded-md">
-                <div className="flex items-center">
-                  <CheckCircle className="text-green-500 h-5 w-5 mr-2" />
-                  <span className="text-green-700 font-medium">Verification approved</span>
-                </div>
-                <p className="text-green-600 mt-1 text-sm">
-                  Your identity has been verified successfully. You can now access all features.
-                </p>
-              </div>
-            )}
-            
-            {status === 'rejected' && (
-              <div className="mt-4 p-4 bg-red-50 rounded-md">
-                <div className="flex items-center">
-                  <AlertCircle className="text-red-500 h-5 w-5 mr-2" />
-                  <span className="text-red-700 font-medium">Verification rejected</span>
-                </div>
-                <p className="text-red-600 mt-1 text-sm">
-                  Reason: {verificationDetails.rejection_reason || 'No reason provided.'}
-                </p>
-              </div>
-            )}
-            
-            {status === 'pending' && (
-              <div className="mt-4 p-4 bg-yellow-50 rounded-md">
-                <div className="flex items-center">
-                  <Clock className="text-yellow-500 h-5 w-5 mr-2" />
-                  <span className="text-yellow-700 font-medium">Verification in progress</span>
-                </div>
-                <p className="text-yellow-600 mt-1 text-sm">
-                  Your documents are currently being reviewed. This typically takes 24-48 hours.
-                </p>
-              </div>
-            )}
           </div>
-        </CardContent>
-      )}
-      
-      <CardFooter className="flex justify-between">
-        {onReset && status === 'rejected' && (
-          <Button onClick={onReset}>Start New Verification</Button>
         )}
-        {!onReset && (
-          <div className="w-full text-center text-gray-500 text-sm">
-            {status === 'pending' ? "We'll notify you when the verification process is complete." : ""}
-          </div>
+      </CardContent>
+      <CardFooter className="flex justify-center">
+        {status === 'rejected' && (
+          <Button 
+            className="w-full max-w-xs" 
+            onClick={onReset ? onReset : () => window.location.reload()}
+          >
+            Try Again
+          </Button>
+        )}
+        {status === 'approved' && (
+          <Button variant="outline" className="w-full max-w-xs" onClick={() => window.location.href = "/"}>
+            Return to Home
+          </Button>
+        )}
+        {status === 'pending' && (
+          <Button variant="outline" className="w-full max-w-xs" onClick={() => window.location.href = "/"}>
+            Return Later
+          </Button>
         )}
       </CardFooter>
     </Card>

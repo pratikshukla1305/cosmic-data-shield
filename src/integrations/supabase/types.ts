@@ -454,53 +454,6 @@ export type Database = {
           },
         ]
       }
-      kyc_document_extractions: {
-        Row: {
-          created_at: string | null
-          document_type: string
-          document_url: string
-          edited_data: Json | null
-          extracted_data: Json | null
-          id: string
-          is_edited: boolean | null
-          updated_at: string | null
-          user_id: string | null
-          verification_id: number | null
-        }
-        Insert: {
-          created_at?: string | null
-          document_type: string
-          document_url: string
-          edited_data?: Json | null
-          extracted_data?: Json | null
-          id?: string
-          is_edited?: boolean | null
-          updated_at?: string | null
-          user_id?: string | null
-          verification_id?: number | null
-        }
-        Update: {
-          created_at?: string | null
-          document_type?: string
-          document_url?: string
-          edited_data?: Json | null
-          extracted_data?: Json | null
-          id?: string
-          is_edited?: boolean | null
-          updated_at?: string | null
-          user_id?: string | null
-          verification_id?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "kyc_document_extractions_verification_id_fkey"
-            columns: ["verification_id"]
-            isOneToOne: false
-            referencedRelation: "kyc_verifications"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       kyc_documents: {
         Row: {
           created_at: string | null
@@ -539,57 +492,42 @@ export type Database = {
       kyc_verifications: {
         Row: {
           created_at: string | null
-          edited_data: Json | null
           email: string
-          extracted_data: Json | null
           full_name: string
           id: number
           id_back: string | null
           id_front: string | null
-          is_data_edited: boolean | null
-          ocr_status: string | null
           officer_action: string | null
           rejection_reason: string | null
           selfie: string | null
           status: string | null
           submission_date: string
-          user_id: string | null
         }
         Insert: {
           created_at?: string | null
-          edited_data?: Json | null
           email: string
-          extracted_data?: Json | null
           full_name: string
           id?: number
           id_back?: string | null
           id_front?: string | null
-          is_data_edited?: boolean | null
-          ocr_status?: string | null
           officer_action?: string | null
           rejection_reason?: string | null
           selfie?: string | null
           status?: string | null
           submission_date: string
-          user_id?: string | null
         }
         Update: {
           created_at?: string | null
-          edited_data?: Json | null
           email?: string
-          extracted_data?: Json | null
           full_name?: string
           id?: number
           id_back?: string | null
           id_front?: string | null
-          is_data_edited?: boolean | null
-          ocr_status?: string | null
           officer_action?: string | null
           rejection_reason?: string | null
           selfie?: string | null
           status?: string | null
           submission_date?: string
-          user_id?: string | null
         }
         Relationships: []
       }
@@ -809,20 +747,15 @@ export type Database = {
       sos_alerts: {
         Row: {
           alert_id: string
-          alert_type: string | null
-          assigned_at: string | null
           contact_info: string | null
           contact_user: boolean | null
           created_at: string | null
-          device_info: Json | null
           dispatch_team: string | null
           latitude: number | null
           location: string
           longitude: number | null
           map_redirect_url: string | null
           message: string | null
-          officer_id: number | null
-          officer_notes: string | null
           reported_by: string
           reported_time: string
           status: string | null
@@ -831,20 +764,15 @@ export type Database = {
         }
         Insert: {
           alert_id: string
-          alert_type?: string | null
-          assigned_at?: string | null
           contact_info?: string | null
           contact_user?: boolean | null
           created_at?: string | null
-          device_info?: Json | null
           dispatch_team?: string | null
           latitude?: number | null
           location: string
           longitude?: number | null
           map_redirect_url?: string | null
           message?: string | null
-          officer_id?: number | null
-          officer_notes?: string | null
           reported_by: string
           reported_time: string
           status?: string | null
@@ -853,20 +781,15 @@ export type Database = {
         }
         Update: {
           alert_id?: string
-          alert_type?: string | null
-          assigned_at?: string | null
           contact_info?: string | null
           contact_user?: boolean | null
           created_at?: string | null
-          device_info?: Json | null
           dispatch_team?: string | null
           latitude?: number | null
           location?: string
           longitude?: number | null
           map_redirect_url?: string | null
           message?: string | null
-          officer_id?: number | null
-          officer_notes?: string | null
           reported_by?: string
           reported_time?: string
           status?: string | null
@@ -874,44 +797,6 @@ export type Database = {
           voice_recording?: string | null
         }
         Relationships: []
-      }
-      user_kyc_notifications: {
-        Row: {
-          created_at: string
-          id: string
-          is_read: boolean | null
-          message: string
-          status: string
-          user_id: string
-          verification_id: number
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          is_read?: boolean | null
-          message: string
-          status: string
-          user_id: string
-          verification_id: number
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          is_read?: boolean | null
-          message?: string
-          status?: string
-          user_id?: string
-          verification_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "user_kyc_notifications_verification_id_fkey"
-            columns: ["verification_id"]
-            isOneToOne: false
-            referencedRelation: "kyc_verifications"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       user_notifications: {
         Row: {
