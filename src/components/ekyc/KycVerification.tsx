@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
@@ -245,7 +246,8 @@ const KycVerification: React.FC<KycVerificationProps> = ({ userId, onComplete, f
         </Button>
       </div>
 
-      <style jsx>{`
+      <style>
+        {`
         .dropzone {
           border: 2px dashed #ccc;
           border-radius: 0.5rem;
@@ -263,7 +265,8 @@ const KycVerification: React.FC<KycVerificationProps> = ({ userId, onComplete, f
           border-radius: 0.5rem;
           padding: 1rem;
         }
-      `}</style>
+        `}
+      </style>
     </div>
   );
 };
