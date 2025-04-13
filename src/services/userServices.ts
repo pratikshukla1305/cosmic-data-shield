@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { SOSAlert, KycVerification, Advisory, CriminalProfile, CaseData, CriminalTip, KycDocument } from '@/types/officer';
 
@@ -203,8 +202,11 @@ export const getUserKycStatus = async (email: string): Promise<KycVerification |
     if (!documentsError && documentsData) {
       documents = documentsData.map((doc: any) => ({
         id: doc.id,
-        type: doc.document_type,
-        url: doc.document_url,
+        verification_id: doc.verification_id,
+        document_type: doc.document_type,
+        document_url: doc.document_url,
+        type: doc.document_type, // Compatibility field
+        url: doc.document_url,   // Compatibility field
         created_at: doc.created_at
       }));
     }

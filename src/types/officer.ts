@@ -36,16 +36,22 @@ export interface KycVerification {
   selfie?: string;
   rejection_reason?: string;
   created_at?: string;
-  documents: KycDocument[]; // Changed from optional to required property
+  documents: KycDocument[]; 
+  extracted_data?: any;
+  ocr_status?: string;
+  edited_data?: any;
+  is_data_edited?: boolean;
 }
 
 export interface KycDocument {
   id: string;
-  verification_id: number;
+  verification_id?: number;
   document_type: string;
   document_url: string;
   extracted_data?: any;
   created_at?: string;
+  type?: string;
+  url?: string;
 }
 
 export interface Advisory {

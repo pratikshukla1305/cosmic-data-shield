@@ -1,6 +1,5 @@
-
 import { supabase } from '@/integrations/supabase/client';
-import { KycVerification, SOSAlert } from '@/types/officer';
+import { KycVerification, SOSAlert, CriminalProfile, CaseData } from '@/types/officer';
 
 // KYC Verifications
 export const getKycVerifications = async (limit?: number): Promise<KycVerification[]> => {
@@ -156,6 +155,113 @@ export const officerLogin = async (email: string, password: string): Promise<any
     return data;
   } catch (error) {
     console.error('Error in officerLogin:', error);
+    throw error;
+  }
+};
+
+// Add missing functions for OfficerCaseMap component
+export const getCases = async (): Promise<CaseData[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('cases')
+      .select('*')
+      .order('case_date', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching cases:', error);
+      throw error;
+    }
+    
+    return data || [];
+  } catch (error) {
+    console.error('Error in getCases:', error);
+    throw error;
+  }
+};
+
+export const createCase = async (caseData: Partial<CaseData>): Promise<CaseData> => {
+  try {
+    const { data, error } = await supabase
+      .from('cases')
+      .insert([caseData])
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error creating case:', error);
+      throw error;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error in createCase:', error);
+    throw error;
+  }
+};
+
+// Add missing functions for OfficerCriminalPanel component
+export const getCriminalProfiles = async (): Promise<CriminalProfile[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('criminal_profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching criminal profiles:', error);
+      throw error;
+    }
+    
+    return data || [];
+  } catch (error) {
+    console.error('Error in getCriminalProfiles:', error);
+    throw error;
+  }
+};
+
+export const createCriminalProfile = async (profileData: Partial<CriminalProfile>): Promise<CriminalProfile> => {
+  try {
+    const { data, error } = await supabase
+      .from('criminal_profiles')
+      .insert([profileData])
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error creating criminal profile:', error);
+      throw error;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error in createCriminalProfile:', error);
+    throw error;
+  }
+};
+
+// Add missing function for OfficerRegistration component
+export const registerOfficer = async (officerData: any): Promise<any> => {
+  try {
+    // Using the database function to register the officer
+    const { data, error } = await supabase
+      .rpc('register_officer', {
+        full_name: officerData.full_name,
+        badge_number: officerData.badge_number,
+        department: officerData.department,
+        department_email: officerData.department_email,
+        phone_number: officerData.phone_number,
+        password: officerData.password,
+        confirm_password: officerData.confirm_password
+      });
+    
+    if (error) {
+      console.error('Error registering officer:', error);
+      throw error;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error in registerOfficer:', error);
     throw error;
   }
 };

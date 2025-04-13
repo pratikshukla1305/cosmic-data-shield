@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { getKycVerifications, updateKycVerificationStatus } from '@/services/officerServices';
@@ -293,7 +292,8 @@ const KycVerificationList: React.FC<KycVerificationListProps> = ({ limit }) => {
           )}
           
           {/* Extracted OCR Data */}
-          {selectedVerification?.extracted_data && Object.keys(selectedVerification.extracted_data).length > 0 && (
+          {selectedVerification?.extracted_data && typeof selectedVerification.extracted_data === 'object' && 
+           Object.keys(selectedVerification.extracted_data).length > 0 && (
             <div className="mt-4 border rounded-md p-4 bg-blue-50">
               <h4 className="font-medium mb-2">Extracted Information</h4>
               <div className="grid grid-cols-2 gap-2">

@@ -11,10 +11,19 @@ interface OcrDataEditorProps {
   verificationId: number;
 }
 
+// Define a type for our extracted data
+interface ExtractedData {
+  aadhaar_number: string;
+  name: string;
+  dob: string;
+  gender: string;
+  [key: string]: string; // Allow for other properties
+}
+
 const OcrDataEditor: React.FC<OcrDataEditorProps> = ({ verificationId }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [data, setData] = useState<any>({
+  const [data, setData] = useState<ExtractedData>({
     aadhaar_number: '',
     name: '',
     dob: '',
@@ -34,11 +43,16 @@ const OcrDataEditor: React.FC<OcrDataEditorProps> = ({ verificationId }) => {
         setOcrStatus(result.ocrStatus);
         
         if (result.extractedData) {
+          // Ensure we're dealing with an object
+          const extractedData = typeof result.extractedData === 'object' && result.extractedData !== null 
+            ? result.extractedData as ExtractedData 
+            : { aadhaar_number: '', name: '', dob: '', gender: '' };
+            
           setData({
-            aadhaar_number: result.extractedData.aadhaar_number || '',
-            name: result.extractedData.name || '',
-            dob: result.extractedData.dob || '',
-            gender: result.extractedData.gender || ''
+            aadhaar_number: extractedData.aadhaar_number || '',
+            name: extractedData.name || '',
+            dob: extractedData.dob || '',
+            gender: extractedData.gender || ''
           });
         }
       }
@@ -55,11 +69,16 @@ const OcrDataEditor: React.FC<OcrDataEditorProps> = ({ verificationId }) => {
           setOcrStatus(result.ocrStatus);
           
           if (result.ocrStatus === 'completed' && result.extractedData) {
+            // Ensure we're dealing with an object
+            const extractedData = typeof result.extractedData === 'object' && result.extractedData !== null 
+              ? result.extractedData as ExtractedData 
+              : { aadhaar_number: '', name: '', dob: '', gender: '' };
+              
             setData({
-              aadhaar_number: result.extractedData.aadhaar_number || '',
-              name: result.extractedData.name || '',
-              dob: result.extractedData.dob || '',
-              gender: result.extractedData.gender || ''
+              aadhaar_number: extractedData.aadhaar_number || '',
+              name: extractedData.name || '',
+              dob: extractedData.dob || '',
+              gender: extractedData.gender || ''
             });
             clearInterval(interval);
           }
