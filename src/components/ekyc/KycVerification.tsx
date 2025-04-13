@@ -244,6 +244,26 @@ const KycVerification: React.FC<KycVerificationProps> = ({ userId, onComplete, f
           )}
         </Button>
       </div>
+
+      <style jsx>{`
+        .dropzone {
+          border: 2px dashed #ccc;
+          border-radius: 0.5rem;
+          padding: 2rem;
+          text-align: center;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+        .dropzone.active {
+          border-color: #007bff;
+          background-color: rgba(0, 123, 255, 0.05);
+        }
+        .uploaded-file {
+          background-color: #f8f9fa;
+          border-radius: 0.5rem;
+          padding: 1rem;
+        }
+      `}</style>
     </div>
   );
 };
