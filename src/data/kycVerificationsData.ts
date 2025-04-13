@@ -1,89 +1,142 @@
 
-// This file contains types and mock data for KYC verifications
+// This file acts as a shared data store for KYC verifications between officer and user portals
 
-export type VerificationStatus = "pending" | "approved" | "rejected" | "none";
+// Define the KYC verification status type
+export type VerificationStatus = 'pending' | 'approved' | 'rejected';
 
-export interface KycDocumentData {
+// Define the KYC verification type
+export interface KycVerification {
   id: string;
-  type: string;
-  url: string;
-  extractedData?: any;
-  created_at?: string;
-}
-
-export interface KycVerificationData {
-  id: number;
-  fullName: string;
+  userId: string;
+  name: string;
   email: string;
-  submissionDate: string;
+  document: string;
+  photo: string;
   status: VerificationStatus;
-  idFrontUrl?: string;
-  idBackUrl?: string;
-  selfieUrl?: string;
-  documents?: KycDocumentData[];
-  extractedData?: any;
-  ocrStatus?: string;
+  submissionDate: string;
+  reviewDate?: string;
+  reviewedBy?: string;
 }
 
-export const mockKycVerifications: KycVerificationData[] = [
+// Initial verifications data
+let kycVerifications: KycVerification[] = [
   {
-    id: 1,
-    fullName: "John Doe",
-    email: "john@example.com",
-    submissionDate: "2024-04-01T10:30:00Z",
-    status: "approved",
-    idFrontUrl: "https://example.com/id-front.jpg",
-    idBackUrl: "https://example.com/id-back.jpg",
-    selfieUrl: "https://example.com/selfie.jpg",
-    documents: [
-      {
-        id: "1",
-        type: "aadhar_front",
-        url: "https://example.com/id-front.jpg"
-      },
-      {
-        id: "2",
-        type: "aadhar_back",
-        url: "https://example.com/id-back.jpg"
-      },
-      {
-        id: "3",
-        type: "selfie",
-        url: "https://example.com/selfie.jpg"
-      }
-    ]
-  },
-  {
-    id: 2,
-    fullName: "Jane Smith",
-    email: "jane@example.com",
-    submissionDate: "2024-04-02T14:45:00Z",
+    id: "kyc-001",
+    userId: "user-123",
+    name: "James Wilson",
+    email: "james.wilson@example.com",
+    document: "https://images.unsplash.com/photo-1609743522653-52354461eb27?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=250&q=80",
+    photo: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=100&q=80",
     status: "pending",
-    idFrontUrl: "https://example.com/id-front-2.jpg",
-    idBackUrl: "https://example.com/id-back-2.jpg",
-    selfieUrl: "https://example.com/selfie-2.jpg"
+    submissionDate: "2023-09-15T10:30:00Z"
   },
   {
-    id: 3,
-    fullName: "Bob Johnson",
-    email: "bob@example.com",
-    submissionDate: "2024-04-03T09:15:00Z",
-    status: "rejected",
-    idFrontUrl: "https://example.com/id-front-3.jpg",
-    idBackUrl: "https://example.com/id-back-3.jpg",
-    selfieUrl: "https://example.com/selfie-3.jpg"
+    id: "kyc-002",
+    userId: "user-456",
+    name: "Emma Thompson",
+    email: "emma.thompson@example.com",
+    document: "https://images.unsplash.com/photo-1608236415053-3691791bbffe?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=250&q=80",
+    photo: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=100&q=80",
+    status: "pending",
+    submissionDate: "2023-09-16T14:45:00Z"
+  },
+  {
+    id: "kyc-003",
+    userId: "user-789",
+    name: "Michael Brown",
+    email: "michael.brown@example.com",
+    document: "https://images.unsplash.com/photo-1580824456266-c578ed421d08?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=250&q=80",
+    photo: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=100&q=80",
+    status: "pending",
+    submissionDate: "2023-09-18T09:15:00Z"
   }
 ];
 
-// This function determines verification status for a user
-export const getUserVerificationStatus = (userId: string): VerificationStatus => {
-  // In a real application, this would call an API or check a database
-  // For now, we'll just return a random status for demonstration purposes
-  const statuses: VerificationStatus[] = ["pending", "approved", "rejected"];
+// Get all KYC verifications
+export const getAllKycVerifications = (): KycVerification[] => {
+  return [...kycVerifications];
+};
+
+// Get KYC verification by ID
+export const getKycVerificationById = (id: string): KycVerification | undefined => {
+  return kycVerifications.find(verification => verification.id === id);
+};
+
+// Get KYC verification by user ID
+export const getKycVerificationByUserId = (userId: string): KycVerification | undefined => {
+  return kycVerifications.find(verification => verification.userId === userId);
+};
+
+// Update KYC verification status
+export const updateKycVerificationStatus = (
+  id: string, 
+  status: VerificationStatus, 
+  reviewedBy?: string
+): KycVerification | null => {
+  const index = kycVerifications.findIndex(verification => verification.id === id);
   
-  // For deterministic behavior in development (based on userId)
-  const userIdSum = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const statusIndex = userIdSum % statuses.length;
+  if (index === -1) return null;
   
-  return statuses[statusIndex];
+  const updatedVerification = {
+    ...kycVerifications[index],
+    status,
+    reviewDate: new Date().toISOString(),
+    reviewedBy: reviewedBy || kycVerifications[index].reviewedBy
+  };
+  
+  kycVerifications[index] = updatedVerification;
+  return updatedVerification;
+};
+
+// Add a new KYC verification
+export const addKycVerification = (verification: Omit<KycVerification, 'id'>): KycVerification => {
+  const newVerification = {
+    id: `kyc-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`,
+    ...verification
+  };
+  
+  kycVerifications.unshift(newVerification);
+  return newVerification;
+};
+
+// For demo/testing: Get the verification status for a specific user
+export const getUserVerificationStatus = (userId: string): VerificationStatus | 'none' => {
+  const verification = kycVerifications.find(v => v.userId === userId);
+  return verification ? verification.status : 'none';
+};
+
+// For demo/testing: Reset verification data
+export const resetKycVerifications = (): void => {
+  kycVerifications = [
+    {
+      id: "kyc-001",
+      userId: "user-123",
+      name: "James Wilson",
+      email: "james.wilson@example.com",
+      document: "https://images.unsplash.com/photo-1609743522653-52354461eb27?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=250&q=80",
+      photo: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=100&q=80",
+      status: "pending",
+      submissionDate: "2023-09-15T10:30:00Z"
+    },
+    {
+      id: "kyc-002",
+      userId: "user-456",
+      name: "Emma Thompson",
+      email: "emma.thompson@example.com",
+      document: "https://images.unsplash.com/photo-1608236415053-3691791bbffe?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=250&q=80",
+      photo: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=100&q=80",
+      status: "pending",
+      submissionDate: "2023-09-16T14:45:00Z"
+    },
+    {
+      id: "kyc-003",
+      userId: "user-789",
+      name: "Michael Brown",
+      email: "michael.brown@example.com",
+      document: "https://images.unsplash.com/photo-1580824456266-c578ed421d08?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=250&q=80",
+      photo: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=100&q=80",
+      status: "pending",
+      submissionDate: "2023-09-18T09:15:00Z"
+    }
+  ];
 };

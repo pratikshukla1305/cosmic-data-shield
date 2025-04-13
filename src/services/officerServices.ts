@@ -1,297 +1,340 @@
-
 import { supabase } from '@/integrations/supabase/client';
-import { KycVerification, SOSAlert, CriminalProfile, CaseData } from '@/types/officer';
+import { 
+  SOSAlert, 
+  KycVerification, 
+  Advisory, 
+  CriminalProfile, 
+  CaseData,
+  CriminalTip,
+  KycDocument
+} from '@/types/officer';
 
-// KYC Verifications
-export const getKycVerifications = async (limit?: number): Promise<KycVerification[]> => {
-  let query = supabase
-    .from('kyc_verifications')
-    .select('*, kyc_document_extractions(*)')
-    .order('submission_date', { ascending: false });
-  
-  if (limit) {
-    query = query.limit(limit);
-  }
-  
-  const { data, error } = await query;
-  
-  if (error) {
-    console.error('Error fetching KYC verifications:', error);
-    throw error;
-  }
-  
-  // Process the data to match our KycVerification type
-  const verifications = data.map((item: any) => {
-    // Convert any documents to our expected format
-    const documents = item.kyc_document_extractions ? item.kyc_document_extractions.map((doc: any) => ({
-      id: doc.id,
-      type: doc.document_type,
-      url: doc.document_url,
-      extractedData: doc.extracted_data,
-      created_at: doc.created_at
-    })) : [];
-    
-    // Remove the nested documents array to avoid duplicates
-    const { kyc_document_extractions, ...rest } = item;
-    
-    return {
-      ...rest,
-      status: item.status?.toLowerCase(),
-      documents
-    };
-  });
-  
-  return verifications;
-};
-
-export const updateKycVerificationStatus = async (
-  verificationId: number,
-  status: string,
-  additionalData: any = {}
-): Promise<void> => {
+// SOS Alerts
+export const getSosAlerts = async (): Promise<SOSAlert[]> => {
   try {
-    const { error } = await supabase
-      .from('kyc_verifications')
-      .update({ 
-        status: status.charAt(0).toUpperCase() + status.slice(1), // Capitalize first letter
-        ...additionalData
-      })
-      .eq('id', verificationId);
+    // First, get all alerts
+    const { data: alerts, error } = await supabase
+      .from('sos_alerts')
+      .select('*')
+      .order('reported_time', { ascending: false });
     
     if (error) {
-      console.error('Error updating KYC verification status:', error);
+      console.error('Error fetching SOS alerts:', error);
       throw error;
     }
     
-    // Get information about the verification
-    const { data: verificationData } = await supabase
-      .from('kyc_verifications')
-      .select('user_id, email, full_name')
-      .eq('id', verificationId)
-      .single();
-    
-    // Create notification for the user if possible
-    if (verificationData?.user_id) {
-      await supabase.from('user_notifications').insert([{
-        notification_type: 'kyc_status_update',
-        message: `Your identity verification has been ${status.toLowerCase()}`,
-        user_id: verificationData.user_id
-      }]);
+    // If no alerts found, return empty array
+    if (!alerts || alerts.length === 0) {
+      return [];
     }
     
+    // Get all voice recordings in a single batch query
+    const alertIds = alerts.map(alert => alert.alert_id);
+    
+    const { data: voiceRecordings, error: recordingError } = await supabase
+      .from('voice_recordings')
+      .select('alert_id, recording_url')
+      .in('alert_id', alertIds);
+    
+    if (recordingError) {
+      console.error('Error fetching voice recordings:', recordingError);
+    } else if (voiceRecordings && voiceRecordings.length > 0) {
+      // Create lookup map for quick access
+      const recordingsMap = new Map();
+      voiceRecordings.forEach(rec => {
+        if (rec.recording_url) {
+          recordingsMap.set(rec.alert_id, rec.recording_url);
+        }
+      });
+      
+      // Attach recordings to corresponding alerts
+      alerts.forEach(alert => {
+        if (recordingsMap.has(alert.alert_id)) {
+          alert.voice_recording = recordingsMap.get(alert.alert_id);
+        }
+      });
+    }
+    
+    return alerts;
   } catch (error) {
-    console.error('Error in updateKycVerificationStatus:', error);
+    console.error('Error in getSosAlerts:', error);
     throw error;
   }
 };
 
-// SOS Alerts
-export const getSosAlerts = async (limit?: number): Promise<SOSAlert[]> => {
-  let query = supabase
-    .from('sos_alerts')
-    .select('*, voice_recordings(*)')
-    .order('reported_time', { ascending: false });
+export const updateSosAlertStatus = async (alertId: string, status: string, dispatchTeam?: string): Promise<SOSAlert[]> => {
+  const updates: any = { status };
   
-  if (limit) {
-    query = query.limit(limit);
+  if (dispatchTeam) {
+    updates.dispatch_team = dispatchTeam;
   }
   
-  const { data, error } = await query;
+  const { data, error } = await supabase
+    .from('sos_alerts')
+    .update(updates)
+    .eq('alert_id', alertId)
+    .select();
   
   if (error) {
-    console.error('Error fetching SOS alerts:', error);
     throw error;
   }
   
   return data || [];
 };
 
-export const updateSosAlertStatus = async (
-  alertId: string,
-  status: string,
-  officerId?: string
-): Promise<void> => {
+// KYC Verifications
+export const getKycVerifications = async (): Promise<KycVerification[]> => {
   try {
-    const updateData: any = { status };
-    
-    if (officerId && (status === 'assigned' || status === 'in_progress')) {
-      updateData.officer_id = officerId;
-      updateData.assigned_at = new Date().toISOString();
-    }
-    
-    const { error } = await supabase
-      .from('sos_alerts')
-      .update(updateData)
-      .eq('alert_id', alertId);
-    
-    if (error) {
-      console.error('Error updating SOS alert status:', error);
-      throw error;
-    }
-    
-    // Create notification for the user if contact_user is true
-    if (status === 'resolved' || status === 'in_progress') {
-      const { data: alertData } = await supabase
-        .from('sos_alerts')
-        .select('reported_by, contact_user')
-        .eq('alert_id', alertId)
-        .single();
-      
-      if (alertData?.contact_user && alertData?.reported_by) {
-        await supabase.from('user_notifications').insert([{
-          notification_type: 'sos_status_update',
-          message: `Your SOS alert has been ${status === 'resolved' ? 'resolved' : 'assigned to an officer'}`,
-          user_id: alertData.reported_by
-        }]);
-      }
-    }
-  } catch (error) {
-    console.error('Error in updateSosAlertStatus:', error);
-    throw error;
-  }
-};
-
-// Officer Authentication
-export const officerLogin = async (email: string, password: string): Promise<any> => {
-  try {
-    const { data, error } = await supabase
-      .from('officer_profiles')
+    // First, get all verifications
+    const { data: verifications, error } = await supabase
+      .from('kyc_verifications')
       .select('*')
-      .eq('department_email', email)
-      .single();
-      
-    if (error || !data) {
-      throw new Error('Officer not found');
+      .order('submission_date', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching KYC verifications:', error);
+      throw error;
     }
     
-    // In a real app, we'd use proper password hashing and verification
-    // This is just a simple check for demonstration purposes
-    if (data.password !== password) {
-      throw new Error('Invalid credentials');
+    // If no verifications found, return empty array
+    if (!verifications || verifications.length === 0) {
+      return [];
     }
     
-    return data;
-  } catch (error) {
-    console.error('Error in officerLogin:', error);
-    throw error;
-  }
-};
-
-// Fixed functions for OfficerCaseMap component
-export const getCases = async (): Promise<CaseData[]> => {
-  try {
-    const { data, error } = await supabase
-      .from('cases')
+    // Prepare the result array with proper typing
+    const results: KycVerification[] = verifications.map(verification => ({
+      ...verification,
+      documents: [] // Initialize documents array for each verification
+    }));
+    
+    // Get the verification ids for batch query
+    const verificationIds = verifications.map(v => v.id);
+    
+    // Get all documents in a single batch query
+    const { data: allDocuments, error: docError } = await supabase
+      .from('kyc_documents')
       .select('*')
-      .order('case_date', { ascending: false });
+      .in('verification_id', verificationIds);
     
-    if (error) {
-      console.error('Error fetching cases:', error);
-      throw error;
+    if (docError) {
+      console.error('Error fetching KYC documents:', docError);
+    } else if (allDocuments && allDocuments.length > 0) {
+      // Group documents by verification_id
+      const documentsByVerification = new Map<number, KycDocument[]>();
+      
+      allDocuments.forEach(doc => {
+        const verificationId = doc.verification_id;
+        if (!documentsByVerification.has(verificationId)) {
+          documentsByVerification.set(verificationId, []);
+        }
+        documentsByVerification.get(verificationId)!.push(doc as KycDocument);
+      });
+      
+      // Attach documents to corresponding verifications
+      results.forEach(verification => {
+        if (documentsByVerification.has(verification.id)) {
+          verification.documents = documentsByVerification.get(verification.id)!;
+        }
+      });
     }
     
-    return data || [];
+    return results;
   } catch (error) {
-    console.error('Error in getCases:', error);
+    console.error('Error in getKycVerifications:', error);
     throw error;
   }
 };
 
-export const createCase = async (caseData: Partial<CaseData>): Promise<CaseData> => {
-  try {
-    // Type assertion to match what Supabase expects
-    // This ensures TypeScript knows we're providing all required fields
-    const validCaseData = {
-      case_number: caseData.case_number || '',
-      case_date: caseData.case_date || '',
-      case_time: caseData.case_time || '',
-      region: caseData.region || '',
-      address: caseData.address || '',
-      case_type: caseData.case_type || '',
-      description: caseData.description || '',
-      latitude: caseData.latitude,
-      longitude: caseData.longitude,
-      reporter_id: caseData.reporter_id,
-      status: caseData.status
-    };
-    
-    const { data, error } = await supabase
-      .from('cases')
-      .insert(validCaseData)
-      .select()
-      .single();
-    
-    if (error) {
-      console.error('Error creating case:', error);
-      throw error;
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Error in createCase:', error);
+export const updateKycVerificationStatus = async (id: number, status: string, officerAction?: string): Promise<KycVerification[]> => {
+  const updates: any = { status };
+  
+  if (officerAction) {
+    updates.officer_action = officerAction;
+  }
+  
+  const { data, error } = await supabase
+    .from('kyc_verifications')
+    .update(updates)
+    .eq('id', id)
+    .select();
+  
+  if (error) {
     throw error;
   }
+  
+  // Initialize documents array for each verification
+  const results: KycVerification[] = (data || []).map(item => ({
+    ...item,
+    documents: []
+  }));
+  
+  // If we have results, fetch the documents for each verification
+  if (results.length > 0) {
+    const { data: documents, error: docError } = await supabase
+      .from('kyc_documents')
+      .select('*')
+      .eq('verification_id', id);
+    
+    if (docError) {
+      console.error('Error fetching KYC documents for updated verification:', docError);
+    } else if (documents) {
+      results[0].documents = documents as KycDocument[];
+    }
+  }
+  
+  return results;
 };
 
-// Fixed functions for OfficerCriminalPanel component
+export const getAdvisories = async (): Promise<Advisory[]> => {
+  const { data, error } = await supabase
+    .from('advisories')
+    .select('*')
+    .order('issue_date', { ascending: false });
+  
+  if (error) {
+    throw error;
+  }
+  
+  return data || [];
+};
+
+export const createAdvisory = async (advisory: any): Promise<Advisory[]> => {
+  const { data, error } = await supabase
+    .from('advisories')
+    .insert([advisory])
+    .select();
+  
+  if (error) {
+    throw error;
+  }
+  
+  return data || [];
+};
+
+export const updateAdvisory = async (id: number, advisory: any): Promise<Advisory[]> => {
+  const { data, error } = await supabase
+    .from('advisories')
+    .update(advisory)
+    .eq('id', id)
+    .select();
+  
+  if (error) {
+    throw error;
+  }
+  
+  return data || [];
+};
+
 export const getCriminalProfiles = async (): Promise<CriminalProfile[]> => {
-  try {
-    const { data, error } = await supabase
-      .from('criminal_profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error fetching criminal profiles:', error);
-      throw error;
-    }
-    
-    return data || [];
-  } catch (error) {
-    console.error('Error in getCriminalProfiles:', error);
+  const { data, error } = await supabase
+    .from('criminal_profiles')
+    .select('*')
+    .order('created_at', { ascending: false });
+  
+  if (error) {
     throw error;
   }
+  
+  return data || [];
 };
 
-export const createCriminalProfile = async (profileData: Partial<CriminalProfile>): Promise<CriminalProfile> => {
-  try {
-    // Type assertion to match what Supabase expects
-    // This ensures TypeScript knows we're providing all required fields
-    const validProfileData = {
-      full_name: profileData.full_name || '',
-      case_number: profileData.case_number || '',
-      last_known_location: profileData.last_known_location || '',
-      charges: profileData.charges || '',
-      age: profileData.age,
-      height: profileData.height,
-      weight: profileData.weight,
-      risk_level: profileData.risk_level,
-      photo_url: profileData.photo_url,
-      additional_information: profileData.additional_information
-    };
-    
-    const { data, error } = await supabase
-      .from('criminal_profiles')
-      .insert(validProfileData)
-      .select()
-      .single();
-    
-    if (error) {
-      console.error('Error creating criminal profile:', error);
-      throw error;
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Error in createCriminalProfile:', error);
+export const createCriminalProfile = async (profile: any): Promise<CriminalProfile[]> => {
+  const { data, error } = await supabase
+    .from('criminal_profiles')
+    .insert([profile])
+    .select();
+  
+  if (error) {
     throw error;
   }
+  
+  return data || [];
 };
 
-// Add missing function for OfficerRegistration component
+export const updateCriminalProfile = async (id: number, profile: any): Promise<CriminalProfile[]> => {
+  const { data, error } = await supabase
+    .from('criminal_profiles')
+    .update(profile)
+    .eq('id', id)
+    .select();
+  
+  if (error) {
+    throw error;
+  }
+  
+  return data || [];
+};
+
+export const getCases = async (): Promise<CaseData[]> => {
+  const { data, error } = await supabase
+    .from('cases')
+    .select('*')
+    .order('case_date', { ascending: false });
+  
+  if (error) {
+    throw error;
+  }
+  
+  return data || [];
+};
+
+export const createCase = async (caseData: any): Promise<CaseData[]> => {
+  const { data, error } = await supabase
+    .from('cases')
+    .insert([caseData])
+    .select();
+  
+  if (error) {
+    throw error;
+  }
+  
+  return data || [];
+};
+
+export const updateCase = async (id: number, caseData: any): Promise<CaseData[]> => {
+  const { data, error } = await supabase
+    .from('cases')
+    .update(caseData)
+    .eq('case_id', id)
+    .select();
+  
+  if (error) {
+    throw error;
+  }
+  
+  return data || [];
+};
+
+export const getCriminalTips = async (): Promise<CriminalTip[]> => {
+  const { data, error } = await supabase
+    .from('criminal_tips')
+    .select('*')
+    .order('tip_date', { ascending: false });
+  
+  if (error) {
+    throw error;
+  }
+  
+  return data || [];
+};
+
+export const updateCriminalTipStatus = async (id: number, status: string): Promise<CriminalTip[]> => {
+  const { data, error } = await supabase
+    .from('criminal_tips')
+    .update({ status })
+    .eq('id', id)
+    .select();
+  
+  if (error) {
+    throw error;
+  }
+  
+  return data || [];
+};
+
 export const registerOfficer = async (officerData: any): Promise<any> => {
   try {
-    // Using the database function to register the officer
+    // Use RPC call to bypass RLS for registration
     const { data, error } = await supabase
       .rpc('register_officer', {
         full_name: officerData.full_name,

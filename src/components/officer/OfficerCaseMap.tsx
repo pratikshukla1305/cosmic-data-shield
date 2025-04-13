@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { MapPin, Plus, PlusCircle } from 'lucide-react';
 import StaticMap from '@/components/maps/StaticMap';
@@ -39,9 +40,9 @@ const OfficerCaseMap = () => {
         setIsLoading(true);
         
         // Fetch cases
-        const casesData = await getCases();
-        console.log("Fetched cases:", casesData);
-        setCases(casesData);
+        const cases = await getCases();
+        console.log("Fetched cases:", cases);
+        setCases(cases);
         
         // Fetch crime map locations
         const { data: locations, error } = await supabase
@@ -162,15 +163,14 @@ const OfficerCaseMap = () => {
       };
       
       // First create the case
-      const newCase = await createCase(formattedData);
-      console.log("Created new case:", newCase);
+      const newCases = await createCase(formattedData);
       
-      if (newCase) {
+      if (newCases && newCases.length > 0) {
         // Then add to crime map locations
         const { data: locationData, error: locationError } = await supabase
           .from('crime_map_locations')
           .insert([{
-            case_id: newCase.case_id,
+            case_id: newCases[0].case_id,
             latitude: formattedData.latitude,
             longitude: formattedData.longitude,
             title: newCaseData.case_number,
@@ -243,7 +243,7 @@ const OfficerCaseMap = () => {
       
       {/* Show number of crime locations as an overlay */}
       <div className="absolute top-4 left-4 bg-white bg-opacity-90 p-2 rounded shadow">
-        <p className="text-sm font-medium">{crimeMappedLocations?.length || 0} Crime Locations</p>
+        <p className="text-sm font-medium">{crimeMappedLocations.length} Crime Locations</p>
       </div>
       
       <div className="absolute bottom-4 right-4">

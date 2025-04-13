@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
 import { toast } from 'sonner';
@@ -59,46 +60,6 @@ export const uploadFilesToSupabase = async (
   
   console.log(`Successfully uploaded ${uploadedUrls.length} of ${files.length} files`);
   return uploadedUrls;
-};
-
-// Upload KYC documents to Supabase storage
-export const uploadKycDocument = async (
-  file: File,
-  userId: string,
-  documentType: string
-): Promise<string | null> => {
-  try {
-    // Create a unique file path
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${uuidv4()}.${fileExt}`;
-    const filePath = `kyc/${userId}/${documentType}_${fileName}`;
-    
-    // Upload file to Supabase storage
-    const { data, error } = await supabase.storage
-      .from('evidences')
-      .upload(filePath, file, {
-        cacheControl: '3600',
-        upsert: true,
-        contentType: file.type
-      });
-    
-    if (error) {
-      console.error(`Error uploading ${documentType}:`, error);
-      toast.error(`Failed to upload ${documentType}: ${error.message}`);
-      return null;
-    }
-    
-    // Get public URL for the uploaded file
-    const { data: urlData } = supabase.storage
-      .from('evidences')
-      .getPublicUrl(filePath);
-    
-    return urlData?.publicUrl || null;
-  } catch (error) {
-    console.error(`Error in uploadKycDocument (${documentType}):`, error);
-    toast.error(`Upload failed. Please try again later.`);
-    return null;
-  }
 };
 
 // Upload criminal photo to Supabase storage

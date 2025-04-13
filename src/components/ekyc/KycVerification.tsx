@@ -1,19 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileUploader } from '@/components/ui/file-uploader';
+import { Check, Upload, Shield, X, Eye, Camera, Edit, AlertCircle, Loader2 } from 'lucide-react';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Input } from '@/components/ui/input';
 import { toast } from '@/hooks/use-toast';
-import { submitKycVerification } from '@/services/userServices';
-import { Loader2, CheckCircle2 } from 'lucide-react';
-import UserInfoCard from './UserInfoCard';
-import { uploadKycDocument, getExistingVerification } from '@/utils/kycUtils';
-import OcrDataEditor from './OcrDataEditor';
-import { supabase } from '@/integrations/supabase/client';
+import { addKycVerification, getKycVerificationByUserId } from '@/data/kycVerificationsData';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { createWorker } from 'tesseract.js';
 
-interface KycVerificationProps {
-  onComplete: () => void;
-  formData: {
+export interface KycVerificationProps {
+  userId: string;
+  onComplete?: () => void;
+  formData?: {
     fullName: string;
     dob: string;
     nationality: string;
@@ -23,581 +24,956 @@ interface KycVerificationProps {
     phone: string;
     email: string;
   };
-  userId: string;
 }
 
-const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps) => {
-  const [activeTab, setActiveTab] = useState<string>('id-front');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [verificationId, setVerificationId] = useState<number | null>(null);
+const KycVerification = ({ userId, onComplete, formData }: KycVerificationProps) => {
+  const [activeTab, setActiveTab] = useState("id");
+  const [idFront, setIdFront] = useState<File | null>(null);
+  const [idBack, setIdBack] = useState<File | null>(null);
+  const [selfie, setSelfie] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isComplete, setIsComplete] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewType, setPreviewType] = useState<"idFront" | "idBack" | "selfie" | null>(null);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [captureType, setCaptureType] = useState<"idFront" | "idBack" | "selfie" | null>(null);
+  const [extractedData, setExtractedData] = useState<{
+    idNumber?: string;
+    name?: string;
+    dob?: string;
+    address?: string;
+    gender?: string;
+  }>({}); 
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editDialogType, setEditDialogType] = useState<"idNumber" | "name" | "dob">("idNumber");
+  const [editedIdNumber, setEditedIdNumber] = useState("");
+  const [editedName, setEditedName] = useState("");
+  const [editedDob, setEditedDob] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
   
-  const [idFrontFile, setIdFrontFile] = useState<File | null>(null);
-  const [idBackFile, setIdBackFile] = useState<File | null>(null);
-  const [selfieFile, setSelfieFile] = useState<File | null>(null);
-  
-  const [idFrontProgress, setIdFrontProgress] = useState<number>(0);
-  const [idBackProgress, setIdBackProgress] = useState<number>(0);
-  const [selfieProgress, setSelfieProgress] = useState<number>(0);
-  
-  const [idFrontUrl, setIdFrontUrl] = useState<string | null>(null);
-  const [idBackUrl, setIdBackUrl] = useState<string | null>(null);
-  const [selfieUrl, setSelfieUrl] = useState<string | null>(null);
-  
-  const [filesUploaded, setFilesUploaded] = useState<{
-    idFront: boolean;
-    idBack: boolean;
-    selfie: boolean;
-  }>({
-    idFront: false,
-    idBack: false,
-    selfie: false
-  });
-  
-  const [shouldShowOcr, setShouldShowOcr] = useState<boolean>(false);
-  const [documentId, setDocumentId] = useState<string | null>(null);
-  
-  // Load existing verification data
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const workerRef = useRef<any>(null);
+
   useEffect(() => {
-    const loadExistingVerification = async () => {
-      setIsLoading(true);
+    const initWorker = async () => {
       try {
-        // Check for existing verification records
-        const existingVerification = await getExistingVerification(userId);
-        
-        if (existingVerification) {
-          // Use existing verification
-          setVerificationId(existingVerification.id);
-          
-          // Set previously uploaded document URLs
-          if (existingVerification.id_front) {
-            setIdFrontUrl(existingVerification.id_front);
-            setFilesUploaded(prev => ({ ...prev, idFront: true }));
-          }
-          
-          if (existingVerification.id_back) {
-            setIdBackUrl(existingVerification.id_back);
-            setFilesUploaded(prev => ({ ...prev, idBack: true }));
-          }
-          
-          if (existingVerification.selfie) {
-            setSelfieUrl(existingVerification.selfie);
-            setFilesUploaded(prev => ({ ...prev, selfie: true }));
-          }
-          
-          // If all documents are already uploaded, go to review tab
-          if (existingVerification.id_front && existingVerification.id_back && existingVerification.selfie) {
-            setActiveTab('review');
-          }
-        } else {
-          // Create new verification record
-          await createVerificationRecord();
-        }
-      } catch (error) {
-        console.error('Error loading existing verification:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load verification data. Please try again.',
-          variant: 'destructive'
+        const worker = await createWorker('eng');
+        await worker.setParameters({
+          tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz/- ',
         });
-      } finally {
-        setIsLoading(false);
+        workerRef.current = worker;
+        console.log("Tesseract worker initialized successfully");
+      } catch (error) {
+        console.error("Failed to initialize Tesseract worker:", error);
+        toast({
+          title: "OCR Initialization Failed",
+          description: "There was a problem setting up the text recognition system.",
+          variant: "destructive"
+        });
+      }
+    };
+
+    initWorker();
+
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const checkExistingVerification = () => {
+      const existingVerification = getKycVerificationByUserId(userId);
+      if (existingVerification && existingVerification.status === 'approved') {
+        setIsComplete(true);
       }
     };
     
-    if (userId) {
-      loadExistingVerification();
+    checkExistingVerification();
+  }, [userId]);
+
+  useEffect(() => {
+    if (idFront && formData) {
+      extractDataFromAadhaar(idFront);
     }
-  }, [userId, formData]);
-  
-  // Create verification record if needed
-  const createVerificationRecord = async () => {
+  }, [idFront, formData]);
+
+  const extractDataFromAadhaar = async (idImage: File) => {
+    if (!workerRef.current) {
+      toast({
+        title: "OCR Not Ready",
+        description: "Please wait for the OCR system to initialize.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
-      const { data, error } = await supabase
-        .from('kyc_verifications')
-        .insert({
-          full_name: formData.fullName,
-          email: formData.email,
-          submission_date: new Date().toISOString(),
-          status: 'Pending', // Set initial status to Pending, not Rejected
-          user_id: userId
-        })
-        .select('id');
+      setIsProcessing(true);
+      toast({
+        title: "Processing Aadhaar Card",
+        description: "We're extracting information from your ID. This may take a moment..."
+      });
+
+      const imageUrl = URL.createObjectURL(idImage);
       
-      if (error) {
-        console.error('Error creating verification record:', error);
+      const img = new Image();
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          URL.revokeObjectURL(imageUrl);
+          setIsProcessing(false);
+          throw new Error("Could not get canvas context");
+        }
+        
+        canvas.width = img.width;
+        canvas.height = img.height;
+        
+        ctx.drawImage(img, 0, 0, img.width, img.height);
+        
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        
+        for (let i = 0; i < data.length; i += 4) {
+          const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+          const threshold = 127;
+          const newValue = avg > threshold ? 255 : 0;
+          data[i] = data[i + 1] = data[i + 2] = newValue;
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
+        
+        const enhancedImage = canvas.toDataURL('image/png');
+        
+        try {
+          const result = await workerRef.current.recognize(enhancedImage);
+          
+          const ocrText = result.data.text;
+          console.log('OCR extracted text:', ocrText);
+          
+          const extracted: {
+            idNumber?: string;
+            name?: string;
+            dob?: string;
+            address?: string;
+            gender?: string;
+          } = {};
+          
+          const aadhaarPatterns = [
+            /\b(\d{4}\s?\d{4}\s?\d{4})\b/,
+            /\b(\d{4}-\d{4}-\d{4})\b/,
+            /\b(\d{12})\b/,
+            /[Nn]umber\s*:?\s*(\d{4}[\s-]?\d{4}[\s-]?\d{4})/,
+            /[Aa]adhaar\s*:?\s*(\d{4}[\s-]?\d{4}[\s-]?\d{4})/,
+            /[Uu][Ii][Dd]\s*:?\s*(\d{4}[\s-]?\d{4}[\s-]?\d{4})/,
+            /\d{4}[\s-]?\d{4}[\s-]?\d{4}/,
+            /[0-9]{4}[\s-]?[0-9]{4}[\s-]?[0-9]{4}/,
+            /\d{4}.*\d{4}.*\d{4}/
+          ];
+          
+          let aadhaarMatch = null;
+          for (const pattern of aadhaarPatterns) {
+            aadhaarMatch = ocrText.match(pattern);
+            if (aadhaarMatch) {
+              console.log("Found Aadhaar pattern match:", aadhaarMatch[0]);
+              break;
+            }
+          }
+          
+          if (aadhaarMatch) {
+            let aadhaarNumber = aadhaarMatch[0];
+            if (aadhaarMatch.length > 1) {
+              aadhaarNumber = aadhaarMatch[1];
+            }
+            
+            aadhaarNumber = aadhaarNumber.replace(/[^0-9]/g, '');
+            
+            if (aadhaarNumber.length === 12) {
+              aadhaarNumber = aadhaarNumber.replace(/(\d{4})(\d{4})(\d{4})/, '$1 $2 $3');
+              extracted.idNumber = aadhaarNumber;
+              console.log("Extracted Aadhaar number:", aadhaarNumber);
+            } else {
+              console.log("Found potential Aadhaar number but length is incorrect:", aadhaarNumber.length);
+            }
+            
+            const dobPatterns = [
+              /\b(DOB|Date\s+of\s+Birth|Birth\s+Date)[\s:]+(\d{2}[/.-]\d{2}[/.-]\d{4})\b/i,
+              /\b(DOB|Date\s+of\s+Birth|Birth\s+Date)[\s:]+(\d{2}[/.-]\d{2}[/.-]\d{2})\b/i,
+              /\b(\d{2}[/.-]\d{2}[/.-]\d{4})\b/,
+              /\b(\d{2}[/.-]\d{2}[/.-]\d{2})\b/,
+              /\b(0[1-9]|[12][0-9]|3[01])[/.-](0[1-9]|1[0-2])[/.-](19|20)\d{2}\b/
+            ];
+            
+            let dobMatch = null;
+            for (const pattern of dobPatterns) {
+              const matches = ocrText.match(pattern);
+              if (matches) {
+                dobMatch = matches.length > 2 ? matches[2] : matches[1];
+                break;
+              }
+            }
+            
+            if (dobMatch) {
+              extracted.dob = dobMatch;
+            }
+            
+            const nameLabels = [
+              /Name\s*[:]?\s*([A-Z][a-z]+(?: [A-Z][a-z]+)+)/i,
+              /\b([A-Z][a-z]+(?: [A-Z][a-z]+){1,3})\b(?=.*DOB|.*Date)/i,
+              /\b([A-Z][a-z]+(?: [A-Z][a-z]+){1,3})\b(?=.*\d{4}[\s-]?\d{4}[\s-]?\d{4})/i,
+              /\b([A-Z][a-z]+(?: [A-Z][a-z]+){1,2})\b/
+            ];
+            
+            let nameMatch = null;
+            for (const pattern of nameLabels) {
+              const matches = ocrText.match(pattern);
+              if (matches) {
+                nameMatch = matches[1];
+                if (nameMatch.split(/\s+/).length > 1 && !/\d/.test(nameMatch)) {
+                  break;
+                }
+              }
+            }
+            
+            if (nameMatch) {
+              const cleanedName = nameMatch.replace(/\s+/g, ' ').trim();
+              if (cleanedName === cleanedName.toUpperCase()) {
+                extracted.name = cleanedName.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+              } else {
+                extracted.name = cleanedName;
+              }
+            }
+            
+            if (ocrText.match(/\b(male|MALE)\b/i)) {
+              extracted.gender = 'Male';
+            } else if (ocrText.match(/\b(female|FEMALE)\b/i)) {
+              extracted.gender = 'Female';
+            }
+            
+            const addressMatch = ocrText.match(/Address\s*[:]?\s*([\s\S]*?)(?=\n\n|\n[A-Z]|$)/i);
+            if (addressMatch) {
+              extracted.address = addressMatch[1].trim();
+            }
+            
+            setExtractedData(extracted);
+            
+            const needsEditing = 
+              (extracted.idNumber && formData?.idNumber && extracted.idNumber !== formData.idNumber) ||
+              (extracted.name && formData?.fullName && !formData.fullName.includes(extracted.name)) ||
+              (extracted.dob && formData?.dob && extracted.dob !== formData.dob);
+              
+            if (extracted.idNumber && (!formData?.idNumber || extracted.idNumber !== formData.idNumber)) {
+              setEditedIdNumber(extracted.idNumber);
+              setEditDialogType("idNumber");
+              setIsEditDialogOpen(true);
+            } else if (extracted.name && (!formData?.fullName || !formData.fullName.includes(extracted.name))) {
+              setEditedName(extracted.name);
+              setEditDialogType("name");
+              setIsEditDialogOpen(true);
+            } else if (extracted.dob && (!formData?.dob || extracted.dob !== formData.dob)) {
+              setEditedDob(extracted.dob);
+              setEditDialogType("dob");
+              setIsEditDialogOpen(true);
+            }
+            
+            toast({
+              title: "Data Extracted",
+              description: "We've successfully extracted information from your Aadhaar card."
+            });
+          } else {
+            console.log("No Aadhaar number found in:", ocrText);
+            toast({
+              title: "Extraction Issue",
+              description: "We couldn't identify an Aadhaar number. Please ensure the image is clear and try again.",
+              variant: "destructive"
+            });
+          }
+        } catch (error) {
+          console.error('OCR recognition error:', error);
+          toast({
+            title: "Recognition Failed",
+            description: "There was a problem processing the image. Please try a clearer image.",
+            variant: "destructive"
+          });
+        } finally {
+          URL.revokeObjectURL(imageUrl);
+          setIsProcessing(false);
+        }
+      };
+      
+      img.onerror = () => {
+        URL.revokeObjectURL(imageUrl);
+        setIsProcessing(false);
         toast({
-          title: 'Setup Error',
-          description: 'Could not initialize verification. Please try again.',
-          variant: 'destructive'
+          title: "Image Load Error",
+          description: "Failed to load the image. Please try a different file.",
+          variant: "destructive"
         });
-        return;
-      }
+      };
       
-      if (data && data.length > 0) {
-        setVerificationId(data[0].id);
-      }
+      img.src = imageUrl;
+      
     } catch (error) {
-      console.error('Error in createVerificationRecord:', error);
+      console.error('OCR extraction error:', error);
+      setIsProcessing(false);
+      toast({
+        title: "Extraction Failed",
+        description: "We encountered an error while processing your ID. Please try again with a clearer image.",
+        variant: "destructive"
+      });
     }
   };
 
-  // Handle file upload
-  const handleFileUpload = async (fileType: 'idFront' | 'idBack' | 'selfie', file: File) => {
-    if (!verificationId) {
-      toast({
-        title: "Setup Error",
-        description: "Verification record not initialized. Please try again.",
-        variant: "destructive"
-      });
-      return;
+  const handleIdFrontChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setIdFront(e.target.files[0]);
     }
+  };
+
+  const handleIdBackChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setIdBack(e.target.files[0]);
+    }
+  };
+
+  const handleSelfieChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setSelfie(e.target.files[0]);
+    }
+  };
+
+  const handlePreview = (type: "idFront" | "idBack" | "selfie") => {
+    setPreviewType(type);
+    setIsPreviewOpen(true);
+  };
+
+  const handleCameraOpen = (type: "idFront" | "idBack" | "selfie") => {
+    setCaptureType(type);
+    setIsCameraOpen(true);
     
-    // Set progress state based on file type
-    const setProgress = {
-      idFront: setIdFrontProgress,
-      idBack: setIdBackProgress,
-      selfie: setSelfieProgress
-    }[fileType];
-    
-    // Document type based on file type
-    const documentType = {
-      idFront: 'aadhar_front',
-      idBack: 'aadhar_back',
-      selfie: 'selfie'
-    }[fileType];
-    
+    setTimeout(() => {
+      startCamera();
+    }, 100);
+  };
+
+  const startCamera = async () => {
     try {
-      // Simulate upload progress
-      let progress = 0;
-      const progressInterval = setInterval(() => {
-        progress += 5;
-        setProgress(Math.min(progress, 95));
-        
-        if (progress >= 95) {
-          clearInterval(progressInterval);
-        }
-      }, 100);
-      
-      // Upload the file
-      const result = await uploadKycDocument(file, userId, documentType, verificationId);
-      clearInterval(progressInterval);
-      
-      if (result?.documentUrl && result?.documentId) {
-        // Store the document ID for OCR processing
-        if (fileType === 'idFront') {
-          setDocumentId(result.documentId);
-          setShouldShowOcr(true);
-        }
-        
-        // Update the appropriate URL state
-        if (fileType === 'idFront') {
-          setIdFrontUrl(result.documentUrl);
-          // Update verification record with the URL
-          await supabase
-            .from('kyc_verifications')
-            .update({ id_front: result.documentUrl })
-            .eq('id', verificationId);
-        } else if (fileType === 'idBack') {
-          setIdBackUrl(result.documentUrl);
-          // Update verification record with the URL
-          await supabase
-            .from('kyc_verifications')
-            .update({ id_back: result.documentUrl })
-            .eq('id', verificationId);
-        } else if (fileType === 'selfie') {
-          setSelfieUrl(result.documentUrl);
-          // Update verification record with the URL
-          await supabase
-            .from('kyc_verifications')
-            .update({ selfie: result.documentUrl })
-            .eq('id', verificationId);
-        }
-        
-        // Set progress to 100%
-        setProgress(100);
-        
-        // Mark file as uploaded
-        setFilesUploaded(prev => ({ ...prev, [fileType]: true }));
-        
-        toast({
-          title: "Upload Successful",
-          description: `Your ${fileType === 'idFront' ? 'ID front' : fileType === 'idBack' ? 'ID back' : 'selfie'} has been uploaded.`
+      if (videoRef.current) {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: captureType === "selfie" ? "user" : "environment" } 
         });
-
-        // If it's the front of the ID, immediately show the OCR editor
-        if (fileType === 'idFront' && verificationId) {
-          setActiveTab('review');
-        }
-      } else {
-        throw new Error('Upload failed');
+        videoRef.current.srcObject = stream;
       }
-    } catch (error: any) {
-      console.error(`Error uploading ${fileType}:`, error);
-      setProgress(0);
+    } catch (err) {
       toast({
-        title: "Upload Failed",
-        description: error.message || `Failed to upload ${fileType}. Please try again.`,
+        title: "Camera Error",
+        description: "Unable to access camera. Please check permissions.",
         variant: "destructive"
       });
     }
   };
 
-  const submitVerification = async () => {
-    if (!verificationId) {
-      toast({
-        title: "Setup Error",
-        description: "Verification record not initialized. Please try again.",
-        variant: "destructive"
-      });
-      return;
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      const tracks = stream.getTracks();
+      tracks.forEach(track => track.stop());
+      videoRef.current.srcObject = null;
     }
-    
-    if (!idFrontUrl) {
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      const context = canvas.getContext('2d');
+      if (context) {
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const file = new File([blob], `${captureType}-${Date.now()}.jpg`, { type: 'image/jpeg' });
+            
+            if (captureType === 'idFront') setIdFront(file);
+            else if (captureType === 'idBack') setIdBack(file);
+            else if (captureType === 'selfie') setSelfie(file);
+            
+            toast({
+              title: "Photo Captured",
+              description: `${captureType === 'idFront' ? 'ID Front' : captureType === 'idBack' ? 'ID Back' : 'Selfie'} captured successfully.` 
+            });
+          }
+        }, 'image/jpeg', 0.95);
+      }
+      
+      setIsCameraOpen(false);
+      stopCamera();
+    }
+  };
+
+  const handleCameraClose = () => {
+    setIsCameraOpen(false);
+    stopCamera();
+  };
+
+  const handleSubmit = () => {
+    if (!idFront || !idBack || !selfie) {
       toast({
-        title: "ID Front Required",
-        description: "Please upload the front of your ID document",
+        title: "Missing Documents",
+        description: "Please upload all required documents (ID Front, ID Back, and Selfie).",
         variant: "destructive"
       });
-      setActiveTab('id-front');
       return;
     }
     
     setIsSubmitting(true);
     
-    try {
-      // Ensure the verification status is set to Pending
-      await supabase
-        .from('kyc_verifications')
-        .update({ status: 'Pending' })
-        .eq('id', verificationId);
-      
-      // Submit verification data to complete the process
-      await submitKycVerification({
-        fullName: formData.fullName,
-        email: formData.email,
-        idFront: idFrontUrl,
-        idBack: idBackUrl,
-        selfie: selfieUrl,
-        userId
+    const convertFileToBase64 = (file: File): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = error => reject(error);
       });
-      
-      toast({
-        title: "Verification Submitted",
-        description: "Your identity verification has been submitted successfully",
-      });
-      
-      onComplete();
-    } catch (error: any) {
-      console.error("Error submitting verification:", error);
-      toast({
-        title: "Submission Failed",
-        description: error.message || "Failed to submit verification. Please try again.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-  
-  const handleNextStep = () => {
-    // Move to next tab
-    if (activeTab === 'id-front') {
-      if (!idFrontUrl && !filesUploaded.idFront) {
+    };
+
+    const submitVerification = async () => {
+      try {
+        const idFrontBase64 = idFront ? await convertFileToBase64(idFront) : '';
+        const idBackBase64 = idBack ? await convertFileToBase64(idBack) : '';
+        const selfieBase64 = selfie ? await convertFileToBase64(selfie) : '';
+        
+        const documents = [];
+        if (Object.keys(extractedData).length > 0) {
+          documents.push({
+            type: 'ID Card OCR',
+            url: idFrontBase64,
+            extracted_data: extractedData
+          });
+        }
+        
+        if (formData) {
+          const { submitKycVerification } = await import('@/services/userServices');
+          
+          await submitKycVerification({
+            fullName: formData.fullName,
+            email: formData.email,
+            idFront: idFrontBase64,
+            idBack: idBackBase64,
+            selfie: selfieBase64,
+            documents: documents
+          });
+        }
+        
+        setIsSubmitting(false);
+        setIsComplete(true);
+        
         toast({
-          title: "ID Front Required",
-          description: "Please upload the front of your ID document",
+          title: "Verification Submitted",
+          description: "Your identity verification has been submitted successfully.",
+        });
+        
+        if (onComplete) {
+          onComplete();
+        }
+      } catch (error) {
+        console.error('Error submitting verification:', error);
+        setIsSubmitting(false);
+        toast({
+          title: "Submission Failed",
+          description: "There was an error submitting your verification. Please try again.",
           variant: "destructive"
         });
-        return;
       }
-      setActiveTab('id-back');
-    } else if (activeTab === 'id-back') {
-      setActiveTab('selfie');
-    } else if (activeTab === 'selfie') {
-      setActiveTab('review');
-    }
+    };
+    
+    submitVerification();
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-shield-blue mb-4" />
-        <p className="text-gray-600">Preparing your verification...</p>
-      </div>
-    );
-  }
+  const handleEditData = () => {
+    if (formData) {
+      if (editDialogType === "idNumber") {
+        toast({
+          title: "ID Number Updated",
+          description: `ID Number has been corrected to: ${editedIdNumber}`
+        });
+      } else if (editDialogType === "name") {
+        toast({
+          title: "Name Updated",
+          description: `Name has been corrected to: ${editedName}`
+        });
+      } else if (editDialogType === "dob") {
+        toast({
+          title: "Date of Birth Updated",
+          description: `Date of Birth has been corrected to: ${editedDob}`
+        });
+      }
+    }
+    setIsEditDialogOpen(false);
+  };
 
+  const openEditDialog = (type: "idNumber" | "name" | "dob") => {
+    setEditDialogType(type);
+    if (type === "idNumber") {
+      setEditedIdNumber(extractedData.idNumber || "");
+    } else if (type === "name") {
+      setEditedName(extractedData.name || "");
+    } else if (type === "dob") {
+      setEditedDob(extractedData.dob || "");
+    }
+    setIsEditDialogOpen(true);
+  };
+  
   return (
-    <div>
-      <UserInfoCard formData={formData} />
+    <Card className="max-w-lg mx-auto">
+      <CardHeader>
+        <CardTitle>Document Verification</CardTitle>
+      </CardHeader>
       
-      <Card className="mb-6">
-        <CardContent className="p-6">
-          {shouldShowOcr && documentId && verificationId ? (
-            <div className="space-y-4">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-medium">Verify Extracted Information</h3>
-                <p className="text-sm text-gray-500">We've automatically extracted information from your document. Please verify and correct if needed.</p>
+      <CardContent>
+        {!isComplete ? (
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="id">ID Front</TabsTrigger>
+              <TabsTrigger value="idBack">ID Back</TabsTrigger>
+              <TabsTrigger value="selfie">Selfie</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="id" className="mt-4">
+              <div className="grid gap-4">
+                <Label htmlFor="id-front">Upload or Capture Front of Aadhaar Card</Label>
+                <div className="flex gap-2">
+                  <input
+                    type="file"
+                    id="id-front"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={handleIdFrontChange}
+                  />
+                  <Button asChild variant="outline" className="flex-1">
+                    <Label htmlFor="id-front" className="cursor-pointer">
+                      {idFront ? (
+                        <><Check className="mr-2 h-4 w-4" />{idFront.name}</>
+                      ) : (
+                        <><Upload className="mr-2 h-4 w-4" />Upload ID Front</>
+                      )}
+                    </Label>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => handleCameraOpen("idFront")}
+                    className="flex-1"
+                  >
+                    <Camera className="mr-2 h-4 w-4" />
+                    Capture ID Front
+                  </Button>
+                </div>
+                {idFront && (
+                  <div className="relative">
+                    <img
+                      src={URL.createObjectURL(idFront)}
+                      alt="ID Front Preview"
+                      className="mt-2 rounded-md"
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="absolute top-2 right-2 bg-white" 
+                      onClick={() => handlePreview("idFront")}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    
+                    {isProcessing && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-md">
+                        <div className="text-center text-white">
+                          <Loader2 className="h-8 w-8 animate-spin mx-auto" />
+                          <p className="mt-2">Extracting data...</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {Object.keys(extractedData).length > 0 && (
+                  <div className="mt-4 p-4 bg-blue-50 rounded-md">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium flex items-center">
+                        <Check className="h-4 w-4 mr-2 text-green-500" />
+                        Extracted Information
+                      </h4>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => {
+                          if (extractedData.idNumber) {
+                            openEditDialog("idNumber");
+                          } else if (extractedData.name) {
+                            openEditDialog("name");
+                          } else if (extractedData.dob) {
+                            openEditDialog("dob");
+                          }
+                        }}
+                      >
+                        <Edit className="h-4 w-4 mr-1" />
+                        Edit
+                      </Button>
+                    </div>
+                    
+                    <div className="space-y-2 text-sm">
+                      {extractedData.idNumber && (
+                        <div className="flex justify-between items-center">
+                          <p><span className="font-semibold">Aadhaar Number:</span> {extractedData.idNumber}</p>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-6 w-6 p-0" 
+                            onClick={() => openEditDialog("idNumber")}
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                      {extractedData.name && (
+                        <div className="flex justify-between items-center">
+                          <p><span className="font-semibold">Name:</span> {extractedData.name}</p>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-6 w-6 p-0" 
+                            onClick={() => openEditDialog("name")}
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                      {extractedData.dob && (
+                        <div className="flex justify-between items-center">
+                          <p><span className="font-semibold">Date of Birth:</span> {extractedData.dob}</p>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-6 w-6 p-0" 
+                            onClick={() => openEditDialog("dob")}
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                      {extractedData.gender && (
+                        <p><span className="font-semibold">Gender:</span> {extractedData.gender}</p>
+                      )}
+                      {extractedData.address && (
+                        <p><span className="font-semibold">Address:</span> {extractedData.address}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-              
-              <OcrDataEditor verificationId={verificationId} />
-              
-              <div className="flex justify-between mt-8">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShouldShowOcr(false)}
-                >
-                  Back to Documents
-                </Button>
-                <Button 
-                  onClick={() => {
-                    setShouldShowOcr(false);
-                    setActiveTab('id-back');
-                  }} 
-                  className="bg-shield-blue hover:bg-blue-700"
-                >
-                  Continue to Next Document
-                </Button>
+            </TabsContent>
+            
+            <TabsContent value="idBack" className="mt-4">
+              <div className="grid gap-4">
+                <Label htmlFor="id-back">Upload or Capture Back of Aadhaar Card</Label>
+                <div className="flex gap-2">
+                  <input
+                    type="file"
+                    id="id-back"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={handleIdBackChange}
+                  />
+                  <Button asChild variant="outline" className="flex-1">
+                    <Label htmlFor="id-back" className="cursor-pointer">
+                      {idBack ? (
+                        <><Check className="mr-2 h-4 w-4" />{idBack.name}</>
+                      ) : (
+                        <><Upload className="mr-2 h-4 w-4" />Upload ID Back</>
+                      )}
+                    </Label>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => handleCameraOpen("idBack")}
+                    className="flex-1"
+                  >
+                    <Camera className="mr-2 h-4 w-4" />
+                    Capture ID Back
+                  </Button>
+                </div>
+                {idBack && (
+                  <div className="relative">
+                    <img
+                      src={URL.createObjectURL(idBack)}
+                      alt="ID Back Preview"
+                      className="mt-2 rounded-md"
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="absolute top-2 right-2 bg-white" 
+                      onClick={() => handlePreview("idBack")}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="selfie" className="mt-4">
+              <div className="grid gap-4">
+                <Label htmlFor="selfie">Upload or Capture Selfie</Label>
+                <div className="flex gap-2">
+                  <input
+                    type="file"
+                    id="selfie"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={handleSelfieChange}
+                  />
+                  <Button asChild variant="outline" className="flex-1">
+                    <Label htmlFor="selfie" className="cursor-pointer">
+                      {selfie ? (
+                        <><Check className="mr-2 h-4 w-4" />{selfie.name}</>
+                      ) : (
+                        <><Upload className="mr-2 h-4 w-4" />Upload Selfie</>
+                      )}
+                    </Label>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => handleCameraOpen("selfie")}
+                    className="flex-1"
+                  >
+                    <Camera className="mr-2 h-4 w-4" />
+                    Capture Selfie
+                  </Button>
+                </div>
+                {selfie && (
+                  <div className="relative">
+                    <img
+                      src={URL.createObjectURL(selfie)}
+                      alt="Selfie Preview"
+                      className="mt-2 rounded-md"
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="absolute top-2 right-2 bg-white" 
+                      onClick={() => handlePreview("selfie")}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <div className="text-center">
+            <Shield className="mx-auto h-12 w-12 text-green-500" />
+            <h3 className="text-lg font-semibold mt-4">Verification Complete!</h3>
+            <p className="text-gray-500 mt-2">
+              Your documents have been successfully submitted for verification.
+            </p>
+          </div>
+        )}
+
+        {formData && !isComplete && (
+          <div className="mt-8 pt-6 border-t">
+            <h3 className="text-lg font-semibold mb-4">Your Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm text-gray-500">Full Name</Label>
+                <p className="font-medium">{formData.fullName}</p>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">Date of Birth</Label>
+                <p className="font-medium">{formData.dob}</p>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">Nationality</Label>
+                <p className="font-medium">{formData.nationality}</p>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">ID Type</Label>
+                <p className="font-medium">{formData.idType.replace('_', ' ')}</p>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">ID Number</Label>
+                <p className="font-medium">{formData.idNumber}</p>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">Phone</Label>
+                <p className="font-medium">{formData.phone}</p>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">Email</Label>
+                <p className="font-medium">{formData.email}</p>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">Address</Label>
+                <p className="font-medium">{formData.address}</p>
               </div>
             </div>
-          ) : (
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid grid-cols-4 mb-6">
-                <TabsTrigger value="id-front">ID Front</TabsTrigger>
-                <TabsTrigger value="id-back">ID Back</TabsTrigger>
-                <TabsTrigger value="selfie">Selfie</TabsTrigger>
-                <TabsTrigger value="review">Review</TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="id-front" className="space-y-4">
-                <div className="text-center mb-4">
-                  <h3 className="text-lg font-medium">Upload ID Document (Front)</h3>
-                  <p className="text-sm text-gray-500">Please upload the front side of your Aadhaar card</p>
-                </div>
-                
-                {idFrontUrl ? (
-                  <div className="mb-4">
-                    <div className="flex items-center space-x-2 text-green-600 mb-2">
-                      <CheckCircle2 className="h-5 w-5" />
-                      <p className="text-sm">Document uploaded successfully</p>
-                    </div>
-                    <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
-                      <img 
-                        src={idFrontUrl} 
-                        alt="ID Front" 
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <FileUploader
-                    id="id-front"
-                    onFileSelected={(file) => {
-                      setIdFrontFile(file);
-                      handleFileUpload('idFront', file);
-                    }}
-                    accept="image/*"
-                    progress={idFrontProgress}
-                    allowCapture={true}
-                    captureLabel="Aadhaar Front"
-                  />
-                )}
-                
-                <div className="flex justify-end mt-4">
-                  <Button 
-                    onClick={handleNextStep} 
-                    className="bg-shield-blue hover:bg-blue-700"
-                    disabled={(!idFrontUrl && !filesUploaded.idFront) || isSubmitting}
-                  >
-                    Continue to ID Back
-                  </Button>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="id-back" className="space-y-4">
-                <div className="text-center mb-4">
-                  <h3 className="text-lg font-medium">Upload ID Document (Back)</h3>
-                  <p className="text-sm text-gray-500">Please upload the back side of your Aadhaar card</p>
-                </div>
-                
-                {idBackUrl ? (
-                  <div className="mb-4">
-                    <div className="flex items-center space-x-2 text-green-600 mb-2">
-                      <CheckCircle2 className="h-5 w-5" />
-                      <p className="text-sm">Document uploaded successfully</p>
-                    </div>
-                    <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
-                      <img 
-                        src={idBackUrl} 
-                        alt="ID Back" 
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <FileUploader
-                    id="id-back"
-                    onFileSelected={(file) => {
-                      setIdBackFile(file);
-                      handleFileUpload('idBack', file);
-                    }}
-                    accept="image/*"
-                    progress={idBackProgress}
-                    allowCapture={true}
-                    captureLabel="Aadhaar Back"
-                  />
-                )}
-                
-                <div className="flex justify-between mt-4">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setActiveTab('id-front')}
-                    disabled={isSubmitting}
-                  >
-                    Back
-                  </Button>
-                  <Button 
-                    onClick={handleNextStep} 
-                    className="bg-shield-blue hover:bg-blue-700"
-                    disabled={isSubmitting}
-                  >
-                    Continue to Selfie
-                  </Button>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="selfie" className="space-y-4">
-                <div className="text-center mb-4">
-                  <h3 className="text-lg font-medium">Take a Selfie</h3>
-                  <p className="text-sm text-gray-500">Please take a clear photo of your face for verification</p>
-                </div>
-                
-                {selfieUrl ? (
-                  <div className="mb-4">
-                    <div className="flex items-center space-x-2 text-green-600 mb-2">
-                      <CheckCircle2 className="h-5 w-5" />
-                      <p className="text-sm">Selfie uploaded successfully</p>
-                    </div>
-                    <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
-                      <img 
-                        src={selfieUrl} 
-                        alt="Selfie" 
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <FileUploader
-                    id="selfie"
-                    onFileSelected={(file) => {
-                      setSelfieFile(file);
-                      handleFileUpload('selfie', file);
-                    }}
-                    accept="image/*"
-                    progress={selfieProgress}
-                    allowCapture={true}
-                    captureLabel="Selfie"
-                  />
-                )}
-                
-                <div className="flex justify-between mt-4">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setActiveTab('id-back')}
-                    disabled={isSubmitting}
-                  >
-                    Back
-                  </Button>
-                  <Button 
-                    onClick={handleNextStep} 
-                    className="bg-shield-blue hover:bg-blue-700"
-                    disabled={isSubmitting || (!selfieUrl && !filesUploaded.selfie)}
-                  >
-                    Continue to Review
-                  </Button>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="review" className="space-y-4">
-                <div className="text-center mb-4">
-                  <h3 className="text-lg font-medium">Review & Confirm</h3>
-                  <p className="text-sm text-gray-500">Please verify the extracted information from your documents</p>
-                </div>
-                
-                {verificationId && (
-                  <OcrDataEditor verificationId={verificationId} />
-                )}
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                  {idFrontUrl && (
-                    <div className="border rounded-md p-2">
-                      <p className="text-sm font-medium mb-2">Aadhaar Front</p>
-                      <div className="aspect-[3/2] w-full overflow-hidden rounded border">
-                        <img src={idFrontUrl} alt="Aadhaar Front" className="w-full h-full object-contain" />
-                      </div>
-                    </div>
-                  )}
-                  
-                  {idBackUrl && (
-                    <div className="border rounded-md p-2">
-                      <p className="text-sm font-medium mb-2">Aadhaar Back</p>
-                      <div className="aspect-[3/2] w-full overflow-hidden rounded border">
-                        <img src={idBackUrl} alt="Aadhaar Back" className="w-full h-full object-contain" />
-                      </div>
-                    </div>
-                  )}
-                  
-                  {selfieUrl && (
-                    <div className="border rounded-md p-2">
-                      <p className="text-sm font-medium mb-2">Selfie</p>
-                      <div className="aspect-[3/2] w-full overflow-hidden rounded border">
-                        <img src={selfieUrl} alt="Selfie" className="w-full h-full object-contain" />
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="flex justify-between mt-8">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setActiveTab('selfie')}
-                    disabled={isSubmitting}
-                  >
-                    Back
-                  </Button>
-                  <Button 
-                    onClick={submitVerification} 
-                    className="bg-green-600 hover:bg-green-700"
-                    disabled={!idFrontUrl || isSubmitting}
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Submitting...
-                      </>
-                    ) : (
-                      'Submit Verification'
-                    )}
-                  </Button>
-                </div>
-              </TabsContent>
-            </Tabs>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        )}
+      </CardContent>
       
-      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-        <h4 className="text-sm font-medium mb-2">Document Requirements:</h4>
-        <ul className="space-y-1 text-sm text-gray-600 list-disc pl-5">
-          <li>Documents should be clear, with no glare or blur</li>
-          <li>All corners of the document should be visible</li>
-          <li>For Aadhaar card, upload both front and back sides</li>
-          <li>Ensure the Aadhaar number is clearly visible</li>
-          <li>Selfie should clearly show your face without sunglasses</li>
-        </ul>
-      </div>
-    </div>
+      <CardFooter className="flex justify-between">
+        {!isComplete ? (
+          <Button onClick={handleSubmit} disabled={isSubmitting || !idFront || !idBack || !selfie}>
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              <>Submit Verification</>
+            )}
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            Go Back
+          </Button>
+        )}
+      </CardFooter>
+      
+      <Sheet open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <SheetContent className="sm:max-w-lg w-full" side="right">
+          <SheetHeader>
+            <SheetTitle>
+              {previewType === 'idFront' ? 'ID Front' : previewType === 'idBack' ? 'ID Back' : 'Selfie'} Preview
+            </SheetTitle>
+            <SheetDescription>
+              View your uploaded document.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-6">
+            {previewType === 'idFront' && idFront && (
+              <img 
+                src={URL.createObjectURL(idFront)} 
+                alt="ID Front" 
+                className="w-full rounded-md"
+              />
+            )}
+            {previewType === 'idBack' && idBack && (
+              <img 
+                src={URL.createObjectURL(idBack)} 
+                alt="ID Back" 
+                className="w-full rounded-md"
+              />
+            )}
+            {previewType === 'selfie' && selfie && (
+              <img 
+                src={URL.createObjectURL(selfie)} 
+                alt="Selfie" 
+                className="w-full rounded-md"
+              />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+      
+      <Dialog open={isCameraOpen} onOpenChange={(open) => {
+        if (!open) handleCameraClose();
+        setIsCameraOpen(open);
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Capture {captureType === 'idFront' ? 'ID Front' : captureType === 'idBack' ? 'ID Back' : 'Selfie'}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="relative mt-2 bg-black rounded-md overflow-hidden">
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline
+              className="w-full h-auto max-h-[50vh]"
+            />
+            <canvas ref={canvasRef} className="hidden" />
+          </div>
+          
+          <DialogFooter className="flex sm:justify-between">
+            <Button variant="secondary" onClick={handleCameraClose}>
+              <X className="mr-2 h-4 w-4" />
+              Cancel
+            </Button>
+            <Button onClick={capturePhoto}>
+              <Camera className="mr-2 h-4 w-4" />
+              Capture
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Edit {editDialogType === 'idNumber' ? 'ID Number' : editDialogType === 'name' ? 'Name' : 'Date of Birth'}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="mt-4">
+            {editDialogType === 'idNumber' && (
+              <div className="grid gap-2">
+                <Label htmlFor="id-number">Aadhaar Number</Label>
+                <Input 
+                  id="id-number" 
+                  value={editedIdNumber} 
+                  onChange={(e) => setEditedIdNumber(e.target.value)} 
+                  placeholder="XXXX XXXX XXXX"
+                />
+              </div>
+            )}
+            
+            {editDialogType === 'name' && (
+              <div className="grid gap-2">
+                <Label htmlFor="name">Full Name</Label>
+                <Input 
+                  id="name" 
+                  value={editedName} 
+                  onChange={(e) => setEditedName(e.target.value)} 
+                  placeholder="Your full name"
+                />
+              </div>
+            )}
+            
+            {editDialogType === 'dob' && (
+              <div className="grid gap-2">
+                <Label htmlFor="dob">Date of Birth</Label>
+                <Input 
+                  id="dob" 
+                  value={editedDob} 
+                  onChange={(e) => setEditedDob(e.target.value)} 
+                  placeholder="DD/MM/YYYY"
+                />
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditData}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 };
 

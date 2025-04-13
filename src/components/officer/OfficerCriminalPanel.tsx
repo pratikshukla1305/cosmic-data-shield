@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -106,20 +107,18 @@ const OfficerCriminalPanel = () => {
       }
       
       // Create criminal profile
-      const profileData = {
+      await createCriminalProfile({
         full_name: formData.full_name,
-        age: formData.age ? parseInt(formData.age) : undefined,
-        height: formData.height ? parseFloat(formData.height) : undefined,
-        weight: formData.weight ? parseFloat(formData.weight) : undefined,
+        age: formData.age ? parseInt(formData.age) : null,
+        height: formData.height ? parseFloat(formData.height) : null,
+        weight: formData.weight ? parseFloat(formData.weight) : null,
         last_known_location: formData.last_known_location,
         case_number: formData.case_number,
         risk_level: formData.risk_level,
         charges: formData.charges,
         additional_information: formData.additional_information,
         photo_url: photoUrl
-      };
-      
-      await createCriminalProfile(profileData);
+      });
       
       toast.success("Criminal profile created", {
         description: "The profile has been added to the database"
