@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
       )
     }
     
-    // Update the verification record with extracted data
+    // Update the verification record with extracted data and set status to pending
     if (documentData.verification_id) {
       // Get the current verification record
       const { data: verificationData, error: verificationError } = await supabase
@@ -176,7 +176,8 @@ Deno.serve(async (req) => {
           .from('kyc_verifications')
           .update({ 
             extracted_data: mergedData,
-            ocr_status: 'completed'
+            ocr_status: 'completed',
+            status: 'Pending'  // Always set to Pending, not Rejected
           })
           .eq('id', documentData.verification_id)
       }

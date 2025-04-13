@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,7 @@ const OcrDataEditor: React.FC<OcrDataEditorProps> = ({ verificationId }) => {
   const [ocrStatus, setOcrStatus] = useState<string>('pending');
   const [processingMessage, setProcessingMessage] = useState('Processing your documents...');
   const [pollingCount, setPollingCount] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let pollingInterval: NodeJS.Timeout | null = null;
@@ -65,6 +67,7 @@ const OcrDataEditor: React.FC<OcrDataEditorProps> = ({ verificationId }) => {
         }
       } catch (error) {
         console.error('Error fetching OCR data:', error);
+        setError('Failed to load extracted data. Please try again or enter information manually.');
       } finally {
         setLoading(false);
       }
@@ -198,7 +201,15 @@ const OcrDataEditor: React.FC<OcrDataEditorProps> = ({ verificationId }) => {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {ocrStatus === 'failed' && (
+        {error && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        
+        {ocrStatus === 'failed' && !error && (
           <Alert variant="destructive" className="mb-4">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>OCR Processing Failed</AlertTitle>

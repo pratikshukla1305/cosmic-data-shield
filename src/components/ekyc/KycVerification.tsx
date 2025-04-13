@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -54,6 +53,9 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
     idBack: false,
     selfie: false
   });
+  
+  const [shouldShowOcr, setShouldShowOcr] = useState<boolean>(false);
+  const [documentId, setDocumentId] = useState<string | null>(null);
   
   // Load existing verification data
   useEffect(() => {
@@ -117,7 +119,7 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
           full_name: formData.fullName,
           email: formData.email,
           submission_date: new Date().toISOString(),
-          status: 'Pending',
+          status: 'Pending', // Set initial status to Pending, not Rejected
           user_id: userId
         })
         .select('id');
@@ -181,7 +183,13 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
       const result = await uploadKycDocument(file, userId, documentType, verificationId);
       clearInterval(progressInterval);
       
-      if (result?.documentUrl) {
+      if (result?.documentUrl && result?.documentId) {
+        // Store the document ID for OCR processing
+        if (fileType === 'idFront') {
+          setDocumentId(result.documentId);
+          setShouldShowOcr(true);
+        }
+        
         // Update the appropriate URL state
         if (fileType === 'idFront') {
           setIdFrontUrl(result.documentUrl);
@@ -216,6 +224,11 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
           title: "Upload Successful",
           description: `Your ${fileType === 'idFront' ? 'ID front' : fileType === 'idBack' ? 'ID back' : 'selfie'} has been uploaded.`
         });
+
+        // If it's the front of the ID, immediately show the OCR editor
+        if (fileType === 'idFront' && verificationId) {
+          setActiveTab('review');
+        }
       } else {
         throw new Error('Upload failed');
       }
@@ -253,6 +266,12 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
     setIsSubmitting(true);
     
     try {
+      // Ensure the verification status is set to Pending
+      await supabase
+        .from('kyc_verifications')
+        .update({ status: 'Pending' })
+        .eq('id', verificationId);
+      
       // Submit verification data to complete the process
       await submitKycVerification({
         fullName: formData.fullName,
@@ -315,198 +334,256 @@ const KycVerification = ({ onComplete, formData, userId }: KycVerificationProps)
       
       <Card className="mb-6">
         <CardContent className="p-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid grid-cols-4 mb-6">
-              <TabsTrigger value="id-front">ID Front</TabsTrigger>
-              <TabsTrigger value="id-back">ID Back</TabsTrigger>
-              <TabsTrigger value="selfie">Selfie</TabsTrigger>
-              <TabsTrigger value="review">Review</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="id-front" className="space-y-4">
+          {shouldShowOcr && documentId && verificationId ? (
+            <div className="space-y-4">
               <div className="text-center mb-4">
-                <h3 className="text-lg font-medium">Upload ID Document (Front)</h3>
-                <p className="text-sm text-gray-500">Please upload the front side of your Aadhaar card</p>
+                <h3 className="text-lg font-medium">Verify Extracted Information</h3>
+                <p className="text-sm text-gray-500">We've automatically extracted information from your document. Please verify and correct if needed.</p>
               </div>
               
-              {idFrontUrl ? (
-                <div className="mb-4">
-                  <div className="flex items-center space-x-2 text-green-600 mb-2">
-                    <CheckCircle2 className="h-5 w-5" />
-                    <p className="text-sm">Document uploaded successfully</p>
-                  </div>
-                  <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
-                    <img 
-                      src={idFrontUrl} 
-                      alt="ID Front" 
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <FileUploader
-                  id="id-front"
-                  onFileSelected={(file) => {
-                    setIdFrontFile(file);
-                    handleFileUpload('idFront', file);
-                  }}
-                  accept="image/*"
-                  progress={idFrontProgress}
-                  allowCapture={true}
-                  captureLabel="Aadhaar Front"
-                />
-              )}
-              
-              <div className="flex justify-end mt-4">
-                <Button 
-                  onClick={handleNextStep} 
-                  className="bg-shield-blue hover:bg-blue-700"
-                  disabled={(!idFrontUrl && !filesUploaded.idFront) || isSubmitting}
-                >
-                  Continue to ID Back
-                </Button>
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="id-back" className="space-y-4">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-medium">Upload ID Document (Back)</h3>
-                <p className="text-sm text-gray-500">Please upload the back side of your Aadhaar card</p>
-              </div>
-              
-              {idBackUrl ? (
-                <div className="mb-4">
-                  <div className="flex items-center space-x-2 text-green-600 mb-2">
-                    <CheckCircle2 className="h-5 w-5" />
-                    <p className="text-sm">Document uploaded successfully</p>
-                  </div>
-                  <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
-                    <img 
-                      src={idBackUrl} 
-                      alt="ID Back" 
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <FileUploader
-                  id="id-back"
-                  onFileSelected={(file) => {
-                    setIdBackFile(file);
-                    handleFileUpload('idBack', file);
-                  }}
-                  accept="image/*"
-                  progress={idBackProgress}
-                  allowCapture={true}
-                  captureLabel="Aadhaar Back"
-                />
-              )}
-              
-              <div className="flex justify-between mt-4">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setActiveTab('id-front')}
-                  disabled={isSubmitting}
-                >
-                  Back
-                </Button>
-                <Button 
-                  onClick={handleNextStep} 
-                  className="bg-shield-blue hover:bg-blue-700"
-                  disabled={isSubmitting}
-                >
-                  Continue to Selfie
-                </Button>
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="selfie" className="space-y-4">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-medium">Take a Selfie</h3>
-                <p className="text-sm text-gray-500">Please take a clear photo of your face for verification</p>
-              </div>
-              
-              {selfieUrl ? (
-                <div className="mb-4">
-                  <div className="flex items-center space-x-2 text-green-600 mb-2">
-                    <CheckCircle2 className="h-5 w-5" />
-                    <p className="text-sm">Selfie uploaded successfully</p>
-                  </div>
-                  <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
-                    <img 
-                      src={selfieUrl} 
-                      alt="Selfie" 
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <FileUploader
-                  id="selfie"
-                  onFileSelected={(file) => {
-                    setSelfieFile(file);
-                    handleFileUpload('selfie', file);
-                  }}
-                  accept="image/*"
-                  progress={selfieProgress}
-                  allowCapture={true}
-                  captureLabel="Selfie"
-                />
-              )}
-              
-              <div className="flex justify-between mt-4">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setActiveTab('id-back')}
-                  disabled={isSubmitting}
-                >
-                  Back
-                </Button>
-                <Button 
-                  onClick={handleNextStep} 
-                  className="bg-shield-blue hover:bg-blue-700"
-                  disabled={isSubmitting || (!selfieUrl && !filesUploaded.selfie)}
-                >
-                  Continue to Review
-                </Button>
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="review" className="space-y-4">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-medium">Review & Confirm</h3>
-                <p className="text-sm text-gray-500">Please verify the extracted information from your documents</p>
-              </div>
-              
-              {verificationId && (
-                <OcrDataEditor verificationId={verificationId} />
-              )}
+              <OcrDataEditor verificationId={verificationId} />
               
               <div className="flex justify-between mt-8">
                 <Button 
                   variant="outline" 
-                  onClick={() => setActiveTab('selfie')}
-                  disabled={isSubmitting}
+                  onClick={() => setShouldShowOcr(false)}
                 >
-                  Back
+                  Back to Documents
                 </Button>
                 <Button 
-                  onClick={submitVerification} 
-                  className="bg-green-600 hover:bg-green-700"
-                  disabled={!idFrontUrl || isSubmitting}
+                  onClick={() => {
+                    setShouldShowOcr(false);
+                    setActiveTab('id-back');
+                  }} 
+                  className="bg-shield-blue hover:bg-blue-700"
                 >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    'Submit Verification'
-                  )}
+                  Continue to Next Document
                 </Button>
               </div>
-            </TabsContent>
-          </Tabs>
+            </div>
+          ) : (
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="grid grid-cols-4 mb-6">
+                <TabsTrigger value="id-front">ID Front</TabsTrigger>
+                <TabsTrigger value="id-back">ID Back</TabsTrigger>
+                <TabsTrigger value="selfie">Selfie</TabsTrigger>
+                <TabsTrigger value="review">Review</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="id-front" className="space-y-4">
+                <div className="text-center mb-4">
+                  <h3 className="text-lg font-medium">Upload ID Document (Front)</h3>
+                  <p className="text-sm text-gray-500">Please upload the front side of your Aadhaar card</p>
+                </div>
+                
+                {idFrontUrl ? (
+                  <div className="mb-4">
+                    <div className="flex items-center space-x-2 text-green-600 mb-2">
+                      <CheckCircle2 className="h-5 w-5" />
+                      <p className="text-sm">Document uploaded successfully</p>
+                    </div>
+                    <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
+                      <img 
+                        src={idFrontUrl} 
+                        alt="ID Front" 
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <FileUploader
+                    id="id-front"
+                    onFileSelected={(file) => {
+                      setIdFrontFile(file);
+                      handleFileUpload('idFront', file);
+                    }}
+                    accept="image/*"
+                    progress={idFrontProgress}
+                    allowCapture={true}
+                    captureLabel="Aadhaar Front"
+                  />
+                )}
+                
+                <div className="flex justify-end mt-4">
+                  <Button 
+                    onClick={handleNextStep} 
+                    className="bg-shield-blue hover:bg-blue-700"
+                    disabled={(!idFrontUrl && !filesUploaded.idFront) || isSubmitting}
+                  >
+                    Continue to ID Back
+                  </Button>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="id-back" className="space-y-4">
+                <div className="text-center mb-4">
+                  <h3 className="text-lg font-medium">Upload ID Document (Back)</h3>
+                  <p className="text-sm text-gray-500">Please upload the back side of your Aadhaar card</p>
+                </div>
+                
+                {idBackUrl ? (
+                  <div className="mb-4">
+                    <div className="flex items-center space-x-2 text-green-600 mb-2">
+                      <CheckCircle2 className="h-5 w-5" />
+                      <p className="text-sm">Document uploaded successfully</p>
+                    </div>
+                    <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
+                      <img 
+                        src={idBackUrl} 
+                        alt="ID Back" 
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <FileUploader
+                    id="id-back"
+                    onFileSelected={(file) => {
+                      setIdBackFile(file);
+                      handleFileUpload('idBack', file);
+                    }}
+                    accept="image/*"
+                    progress={idBackProgress}
+                    allowCapture={true}
+                    captureLabel="Aadhaar Back"
+                  />
+                )}
+                
+                <div className="flex justify-between mt-4">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setActiveTab('id-front')}
+                    disabled={isSubmitting}
+                  >
+                    Back
+                  </Button>
+                  <Button 
+                    onClick={handleNextStep} 
+                    className="bg-shield-blue hover:bg-blue-700"
+                    disabled={isSubmitting}
+                  >
+                    Continue to Selfie
+                  </Button>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="selfie" className="space-y-4">
+                <div className="text-center mb-4">
+                  <h3 className="text-lg font-medium">Take a Selfie</h3>
+                  <p className="text-sm text-gray-500">Please take a clear photo of your face for verification</p>
+                </div>
+                
+                {selfieUrl ? (
+                  <div className="mb-4">
+                    <div className="flex items-center space-x-2 text-green-600 mb-2">
+                      <CheckCircle2 className="h-5 w-5" />
+                      <p className="text-sm">Selfie uploaded successfully</p>
+                    </div>
+                    <div className="relative w-full aspect-[3/2] max-w-md mx-auto border rounded-md overflow-hidden">
+                      <img 
+                        src={selfieUrl} 
+                        alt="Selfie" 
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <FileUploader
+                    id="selfie"
+                    onFileSelected={(file) => {
+                      setSelfieFile(file);
+                      handleFileUpload('selfie', file);
+                    }}
+                    accept="image/*"
+                    progress={selfieProgress}
+                    allowCapture={true}
+                    captureLabel="Selfie"
+                  />
+                )}
+                
+                <div className="flex justify-between mt-4">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setActiveTab('id-back')}
+                    disabled={isSubmitting}
+                  >
+                    Back
+                  </Button>
+                  <Button 
+                    onClick={handleNextStep} 
+                    className="bg-shield-blue hover:bg-blue-700"
+                    disabled={isSubmitting || (!selfieUrl && !filesUploaded.selfie)}
+                  >
+                    Continue to Review
+                  </Button>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="review" className="space-y-4">
+                <div className="text-center mb-4">
+                  <h3 className="text-lg font-medium">Review & Confirm</h3>
+                  <p className="text-sm text-gray-500">Please verify the extracted information from your documents</p>
+                </div>
+                
+                {verificationId && (
+                  <OcrDataEditor verificationId={verificationId} />
+                )}
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                  {idFrontUrl && (
+                    <div className="border rounded-md p-2">
+                      <p className="text-sm font-medium mb-2">Aadhaar Front</p>
+                      <div className="aspect-[3/2] w-full overflow-hidden rounded border">
+                        <img src={idFrontUrl} alt="Aadhaar Front" className="w-full h-full object-contain" />
+                      </div>
+                    </div>
+                  )}
+                  
+                  {idBackUrl && (
+                    <div className="border rounded-md p-2">
+                      <p className="text-sm font-medium mb-2">Aadhaar Back</p>
+                      <div className="aspect-[3/2] w-full overflow-hidden rounded border">
+                        <img src={idBackUrl} alt="Aadhaar Back" className="w-full h-full object-contain" />
+                      </div>
+                    </div>
+                  )}
+                  
+                  {selfieUrl && (
+                    <div className="border rounded-md p-2">
+                      <p className="text-sm font-medium mb-2">Selfie</p>
+                      <div className="aspect-[3/2] w-full overflow-hidden rounded border">
+                        <img src={selfieUrl} alt="Selfie" className="w-full h-full object-contain" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex justify-between mt-8">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setActiveTab('selfie')}
+                    disabled={isSubmitting}
+                  >
+                    Back
+                  </Button>
+                  <Button 
+                    onClick={submitVerification} 
+                    className="bg-green-600 hover:bg-green-700"
+                    disabled={!idFrontUrl || isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Submitting...
+                      </>
+                    ) : (
+                      'Submit Verification'
+                    )}
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
+          )}
         </CardContent>
       </Card>
       

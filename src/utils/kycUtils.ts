@@ -124,7 +124,8 @@ export const updateExtractedKycData = async (verificationId: number, editedData:
       .from('kyc_verifications')
       .update({
         edited_data: editedData,
-        is_data_edited: true
+        is_data_edited: true,
+        status: 'Pending' // Always set to Pending, not Rejected
       })
       .eq('id', verificationId);
       

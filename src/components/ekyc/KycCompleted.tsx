@@ -1,8 +1,10 @@
+
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Check, X, Clock, AlertTriangle } from 'lucide-react';
 import { getUserVerificationStatus, VerificationStatus } from '@/data/kycVerificationsData';
+import { supabase } from '@/integrations/supabase/client';
 
 interface KycCompletedProps {
   status?: VerificationStatus;
@@ -19,13 +21,33 @@ const KycCompleted = ({
   
   // Poll for status updates (in a real app this would use websockets or a real-time database)
   useEffect(() => {
-    const checkStatus = () => {
-      // Only check if we don't have a valid status already
-      if (initialStatus === 'none' || initialStatus === 'pending') {
-        const currentStatus = getUserVerificationStatus(userId);
-        if (currentStatus !== 'none' && currentStatus !== status) {
-          setStatus(currentStatus);
+    const checkStatus = async () => {
+      try {
+        // Check current status from database
+        if (userId) {
+          const { data, error } = await supabase
+            .from('kyc_verifications')
+            .select('status')
+            .eq('user_id', userId)
+            .order('submission_date', { ascending: false })
+            .limit(1)
+            .single();
+            
+          if (!error && data) {
+            const dbStatus = data.status?.toLowerCase() as VerificationStatus;
+            if (dbStatus && dbStatus !== status) {
+              setStatus(dbStatus);
+            }
+          }
+        } else {
+          // Fallback to mock data if no userId
+          const currentStatus = getUserVerificationStatus(userId);
+          if (currentStatus !== 'none' && currentStatus !== status) {
+            setStatus(currentStatus);
+          }
         }
+      } catch (error) {
+        console.error("Error checking verification status:", error);
       }
     };
     
@@ -45,7 +67,7 @@ const KycCompleted = ({
             ? 'Your verification is being reviewed by our team'
             : status === 'approved'
               ? 'Your identity has been successfully verified'
-              : 'Your identity verification has been rejected'
+              : 'Please check your document details and try again'
           }
         </CardDescription>
       </CardHeader>
@@ -79,19 +101,19 @@ const KycCompleted = ({
             <div className="inline-flex h-24 w-24 items-center justify-center rounded-full bg-red-100 mb-4">
               <X className="h-12 w-12 text-red-600" />
             </div>
-            <h3 className="text-xl font-medium mb-2">Verification Rejected</h3>
+            <h3 className="text-xl font-medium mb-2">Verification Needs Attention</h3>
             <p className="text-gray-500 mb-4">
-              Unfortunately, we couldn't verify your identity with the provided documents. Please retry with clearer documents.
+              We need some additional information to complete your verification. Please try again with clearer documents.
             </p>
             <div className="bg-amber-50 border border-amber-200 rounded-md p-4 mb-4 flex items-start">
               <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 mr-2 flex-shrink-0" />
               <div>
-                <h4 className="font-medium text-amber-800 mb-1">Possible reasons for rejection:</h4>
+                <h4 className="font-medium text-amber-800 mb-1">Try again with:</h4>
                 <ul className="text-sm text-amber-700 list-disc list-inside space-y-1">
-                  <li>The document image was blurry or unclear</li>
-                  <li>The selfie didn't match the ID photo</li>
-                  <li>The document appears to be expired or invalid</li>
-                  <li>Information on the document was not legible</li>
+                  <li>Clear, well-lit photos of your documents</li>
+                  <li>Make sure your full face is visible in the selfie</li>
+                  <li>Ensure all document corners are visible</li>
+                  <li>All text on documents should be legible</li>
                 </ul>
               </div>
             </div>
