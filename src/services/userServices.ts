@@ -60,7 +60,8 @@ export const submitKycVerification = async (verificationData: any): Promise<KycV
         status: 'Pending',
         id_front: verificationData.idFront,
         id_back: verificationData.idBack,
-        selfie: verificationData.selfie
+        selfie: verificationData.selfie,
+        user_id: verificationData.user_id || null
       }])
       .select();
     
@@ -137,6 +138,35 @@ export const getUserKycStatus = async (email: string): Promise<KycVerification |
     ...data,
     documents: documents || []
   };
+};
+
+// Check for user notifications regarding KYC verifications
+export const getUserKycNotifications = async (userId: string): Promise<any[]> => {
+  const { data, error } = await supabase
+    .from('user_kyc_notifications')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error("Error fetching user KYC notifications:", error);
+    throw error;
+  }
+
+  return data || [];
+};
+
+// Mark a KYC notification as read
+export const markKycNotificationAsRead = async (notificationId: string): Promise<void> => {
+  const { error } = await supabase
+    .from('user_kyc_notifications')
+    .update({ is_read: true })
+    .eq('id', notificationId);
+
+  if (error) {
+    console.error("Error marking KYC notification as read:", error);
+    throw error;
+  }
 };
 
 // Advisories
